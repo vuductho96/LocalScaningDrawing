@@ -1,0 +1,37 @@
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+::-webkit-scrollbar-track {
+    background: #0f172a;
+}
+::-webkit-scrollbar-thumb {
+    background: #334155;
+    border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #475569;
+}
+
+/* Canvas styling */
+#canvasViewport {
+    background-color: #090d16;
+    background-image: 
+        radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 0),
+        radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 0);
+    background-size: 24px 24px;
+    background-position: 0 0, 12px 12px;
+}
+
+/* Editable cells */
+.editable-cell:hover {
+    background-color: rgba(59, 130, 246, 0.1);
+    outline: 1px dashed rgba(59, 130, 246, 0.5);
+    border-radius: 4px;
+}
+.editable-cell:focus {
+    background-color: rgba(30, 41, 59, 1);
+    outline: 2px solid #3b82f6;
+    border-radius: 4px;
+}

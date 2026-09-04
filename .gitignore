@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+uploads/cache/*
+uploads/*.pdf
+!uploads/sample_drawing.pdf
+.env
+.venv
+env/
+venv/
+*.log
