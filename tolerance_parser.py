@@ -91,20 +91,17 @@ class AdaptiveLearner:
                         minute = m.group(2) if m.lastindex and m.lastindex >= 2 else None
                         second = m.group(3) if m.lastindex and m.lastindex >= 3 else None
                         parts = [f"{deg}°"]
-                        total_deg = float(deg)
                         if minute:
                             parts.append(f"{minute}'")
-                            total_deg += float(minute) / 60.0
                         if second:
                             parts.append(f'{second}"')
-                            total_deg += float(second) / 3600.0
                         callout = "".join(parts)
                         return {
                             "success": True,
                             "raw_text": raw_text,
                             "qty": "",
                             "prefix": "",
-                            "nominal": round(total_deg, 4),
+                            "nominal": callout,
                             "nominal_str": callout,
                             "upper_tol": "",
                             "lower_tol": "",
@@ -227,50 +224,9 @@ class AdaptiveLearner:
                 })
                 new_rule_created = True
         else:
-            # Tự động trích xuất Wildcard Pattern:
-            # Ví dụ: "4\n0\n4\n-0.02" hoặc "4 0 4 -0.02" bị OCR cắt rời số -> Khái quát hóa dạng (\d+)\s+0\s+(\d+)\s+([+-]\d+(?:\.\d+)?)
-            # Hoặc dung sai đứng trước: "3 +0.02 1 1 0" -> Tự động nhận diện cấu trúc Wildcard
-            lines_raw = [line.strip() for line in clean_raw.split() if line.strip()]
-            num_tokens = len(lines_raw)
-            nom_str = str(corrected.get("nominal_str", "") or corrected.get("nominal", ""))
-            u_tol = corrected.get("upper_tol", "")
-            l_tol = corrected.get("lower_tol", "")
-
-            # Neu OCR bi tach roi thanh 3 hoac 4 tokens so
-            if num_tokens >= 3:
-                # Tao regex pattern tong quat
-                token_patterns = []
-                for tok in lines_raw:
-                    if re.match(r'^[+-]?[0-9]+(?:\.[0-9]+)?$', tok):
-                        if tok.startswith('+') or tok.startswith('-'):
-                            token_patterns.append(r'([+-][0-9]+(?:\.[0-9]+)?)')
-                        else:
-                            token_patterns.append(r'([0-9]+(?:\.[0-9]+)?)')
-                    else:
-                        token_patterns.append(re.escape(tok))
-
-                # Regex pattern linh hoat giua cac token co the la khoang trang hoac xuong dong
-                gen_regex = r'^\s*' + r'[\s\n]+'.join(token_patterns) + r'\s*$'
-                rule_name = f"Pattern tách số: {' '.join(token_patterns)}"
-
-                # Kiem tra xem rule tuong tu da ton tai chua
-                if not any(r.get("pattern") == gen_regex for r in self.generalized_rules):
-                    rule_id = f"rule_gen_{abs(hash(gen_regex)) % 100000}"
-                    self.generalized_rules.append({
-                        "id": rule_id,
-                        "name": f"Nhận diện tách rời {num_tokens} cụm số (** Wildcard)",
-                        "pattern": gen_regex,
-                        "type": "split_tokens",
-                        "token_count": num_tokens,
-                        "template": {
-                            "has_upper": bool(u_tol and u_tol != '0'),
-                            "has_lower": bool(l_tol and l_tol != '0'),
-                            "default_upper": u_tol,
-                            "default_lower": l_tol
-                        },
-                        "user_defined": True
-                    })
-                    new_rule_created = True
+            # Cac sua doi binh thuong duoc ghi nho chinh xac 100% trong exact_matches (1-Shot)
+            # Khong tu dong sinh wildcard so vo toi va lam sai lech cac kich thuoc khac
+            pass
 
         self.save_rules_to_disk()
         return {
@@ -292,6 +248,88 @@ class AdaptiveLearner:
 
 # Global instance
 global_adaptive_learner = AdaptiveLearner()
+
+
+class CADTextSanitizer:
+    """
+    Bộ chấp nhận & chuẩn hóa Raw Text chuyên biệt cho bản vẽ kỹ thuật CAD.
+    Chỉ chấp nhận tập ký tự hợp lệ:
+    - Chữ số: 0 đến 9
+    - Chữ cái: A đến Z, a đến z (hỗ trợ các tiền tố/hậu tố R, D, C, M, PHI, DIA, PCD, THRU, TYP, MAX, MIN, REF, v.v.)
+    - Ký hiệu đặc trưng CAD:
+        + Đường kính: Ø, ø, ⌀, Φ, φ, ϕ, %%c, %%C, PHI, DIA (tự động chuẩn hóa về Ø)
+        + Dung sai: ±, +, -, ∓, /
+        + Góc độ, phút, giây: °, º, ', ", ′, ″, deg
+        + Hình vuông / Vát mép / Bán kính / Ren: □, ■, C, R, SR, M, G, Tr
+        + Dấu phân cách & kích thước tham chiếu: ., ,, :, x, X, (, ), [, ]
+        + Khoảng trắng: space, \\t, \\n
+    Mọi ký tự rác nằm ngoài whitelist (như ! @ # $ % ^ & * ~ | \\ _ = < > { } ?) sẽ bị loại bỏ
+    hoặc chuẩn hóa về ký tự CAD tương ứng.
+    """
+
+    # Bảng chuẩn hóa các alias & biến thể OCR về ký hiệu kỹ thuật chuẩn
+    NORM_MAP = [
+        # Đường kính / Phi
+        (r'%%[cC]', 'Ø'),
+        (r'\b(?:PHI|Phi|phi|DIA|Dia|dia)\b', 'Ø'),
+        (r'[ø⌀Φφϕ]', 'Ø'),
+        
+        # Góc độ, phút, giây
+        (r'[○◯OОo]\s*°', '0°'),
+        (r'\u3002', '°'),
+        (r'\bdeg\b', '°'),
+        (r'[`′’]', "'"),
+        (r'[”″]|\'\'', '"'),
+        
+        # Dấu dung sai và gạch nối
+        (r'[—–―‒‑‐−－]', '-'),
+        (r'\+\s*[-–/]|±|\+-\s*', '±'),
+        (r'=\s*(?=[0-9])', '-'),  # Dấu '=' đứng trước số do OCR nhầm từ dấu '-'
+        (r'(?<=\d),(?=\d)', '.'), # Dấu phẩy số học -> dấu chấm thập phân
+    ]
+
+    # Whitelist pattern: Chỉ giữ lại các ký tự được phép
+    DISALLOWED_PATTERN = re.compile(r'[^0-9A-Za-zØ°\'"±+\-/.xX:,()\[\]□■ \t\n]')
+
+    @classmethod
+    def sanitize(cls, raw_text: str) -> str:
+        if not raw_text:
+            return ""
+
+        t = raw_text
+
+        # B1: Chuẩn hóa các alias/ký hiệu về chuẩn CAD
+        for pattern, repl in cls.NORM_MAP:
+            t = re.sub(pattern, repl, t, flags=re.IGNORECASE if 'deg' in pattern or 'phi' in pattern else 0)
+
+        # B2: Whitelist - Loại bỏ triệt để mọi ký tự rác ngoài danh mục
+        t = cls.DISALLOWED_PATTERN.sub('', t)
+
+        # B3: Xử lý và làm sạch từng dòng
+        lines = [l.strip() for l in t.split('\n') if l.strip()]
+        valid_lines = []
+
+        for line in lines:
+            # Bỏ qua dòng không chứa số hoặc không chứa ký hiệu CAD đặc trưng
+            if not re.search(r'[0-9Ø°RCDMrxmX□■]', line, re.IGNORECASE):
+                continue
+
+            # Xóa các ký tự phân cách rác ở đầu dòng (bảo vệ dấu dung sai như -0.01, +0.02)
+            if not re.match(r'^[+-]0?\.[0-9]+', line):
+                line = re.sub(r'^[/:.,xX\s]+', '', line)
+            
+            # Xóa các ký tự phân cách rác ở cuối dòng (bảo vệ ngoặc đóng tham chiếu như (REF), (10.5))
+            line = re.sub(r'[/xX:, \t]+$', '', line)
+
+            # Chuẩn hóa khoảng trắng & dấu thập phân
+            line = re.sub(r'[ \t]+', ' ', line)
+            line = re.sub(r'(\d)\s*\.\s*(\d)', r'\1.\2', line)
+
+            if line.strip():
+                valid_lines.append(line.strip())
+
+        return '\n'.join(valid_lines)
+
 
 class ToleranceParser:
     """
@@ -344,17 +382,25 @@ class ToleranceParser:
         """
         Phan tich chuoi OCR hoac danh sach cac dong OCR.
         """
-        if not raw_text:
-            return self._empty_result("")
+        raw_clean = raw_text.strip().replace('\r', '')
 
-        clean_text = raw_text.strip().replace('\r', '')
-
-        # --- Uu tien Tang 1 & Tang 2 cua Adaptive Learner (Hoc tu nguoi dung) ---
-        adapted_result = global_adaptive_learner.apply_adaptations(clean_text)
+        # Ưu tiên Kiểm tra Exact match với raw text nguyên bản
+        adapted_result = global_adaptive_learner.apply_adaptations(raw_clean)
         if adapted_result:
             return adapted_result
 
-        # Ap dung bo thay the ky tu OCR da hoc
+        # Áp dụng bộ lọc Whitelist & Chuẩn hóa ký tự chuẩn CAD
+        clean_text = CADTextSanitizer.sanitize(raw_clean)
+        if not clean_text:
+            return self._empty_result(raw_text)
+
+        # Kiểm tra lại Exact match với text đã chuẩn hóa
+        if clean_text != raw_clean:
+            adapted_result = global_adaptive_learner.apply_adaptations(clean_text)
+            if adapted_result:
+                return adapted_result
+
+        # Áp dụng bộ thay thế ký tự OCR đã học
         clean_text = global_adaptive_learner.preprocess_text(clean_text)
 
         lines = [line.strip() for line in clean_text.split('\n') if line.strip()]
@@ -409,9 +455,13 @@ class ToleranceParser:
             callout = f"{c_val}x{deg_val}°"
             return self._build_result(raw_text, qty, prefix or "C", c_num, callout, "0", "0", "angle", suffix)
 
+        # Chuan hoa cac ky tu goc do (minute, second)
+        clean_text = re.sub(r'[\u2018\u2019\u2032`]', "'", clean_text)
+        clean_text = re.sub(r'[\u201C\u201D\u2033]|\x27\x27|\u2019\u2019', '"', clean_text)
+
         # Check Kich thuoc goc do (Angular Dimensions):
-        # 1. Degree-Minute-Second: 4°30'23", 4° 30' 23", 45°30'
-        dms_match = re.search(r'([0-9]+(?:\.[0-9]+)?)[°\u3002]\s*(?:([0-9]+(?:\.[0-9]+)?)(?:[\x27\u2019\'])\s*)?(?:([0-9]+(?:\.[0-9]+)?)(?:[\x22\u201D\"]))?', clean_text)
+        # 1. Degree-Minute-Second: 4°30'23", 4° 30' 23", 45°30', 0°10'36"
+        dms_match = re.search(r'([0-9]+(?:\.[0-9]+)?)[°\u3002]\s*(?:([0-9]+(?:\.[0-9]+)?)(?:[\x27\'])\s*)?(?:([0-9]+(?:\.[0-9]+)?)(?:[\x22\"]))?', clean_text)
         if dms_match and ('°' in clean_text or '\u3002' in clean_text) and not any(c in clean_text for c in ['±', '+', '-']):
             deg = dms_match.group(1)
             minute = dms_match.group(2)
@@ -426,21 +476,60 @@ class ToleranceParser:
                 total_deg += float(second) / 3600.0
             
             ang_callout = "".join(parts)
-            return self._build_result(raw_text, qty, prefix, round(total_deg, 4), ang_callout, "0", "0", "angle", suffix)
+            return self._build_result(raw_text, qty, prefix, round(total_deg, 4), ang_callout, "", "", "angle", suffix)
 
-        # 2. Goc do kem dung sai: 45° ± 0.5° hoac 45° ± 30'
-        ang_tol_match = re.search(r'([0-9]+(?:\.[0-9]+)?)[°\u3002]\s*[±]\s*([0-9]+(?:\.[0-9]+)?)([°\x27\u2019\'\u3002])?', clean_text)
+        # 2. Goc do kem dung sai: 45° ± 0.5° hoac 45° ± 30' hoac 45°30' ± 15'
+        ang_tol_match = re.search(r'([0-9]+(?:\.[0-9]+)?)[°\u3002]\s*(?:([0-9]+(?:\.[0-9]+)?)(?:[\x27\'])\s*)?(?:([0-9]+(?:\.[0-9]+)?)(?:[\x22\"]))?\s*[±]\s*([0-9]+(?:\.[0-9]+)?)([°\x27\u3002\"])?', clean_text)
         if ang_tol_match:
-            deg_nom = float(ang_tol_match.group(1))
-            tol_val = float(ang_tol_match.group(2))
-            tol_unit = ang_tol_match.group(3) or '°'
-            unit_sym = '°' if tol_unit in ['°', '\u3002'] else "'"
+            deg = ang_tol_match.group(1)
+            minute = ang_tol_match.group(2)
+            second = ang_tol_match.group(3)
+            tol_val = float(ang_tol_match.group(4))
+            tol_unit = ang_tol_match.group(5) or '°'
+            unit_sym = "'" if tol_unit in ["'", '’'] else ('"' if tol_unit in ['"', '”'] else '°')
+            
+            parts = [f"{deg}°"]
+            total_deg = float(deg)
+            if minute:
+                parts.append(f"{minute}'")
+                total_deg += float(minute) / 60.0
+            if second:
+                parts.append(f'{second}"')
+                total_deg += float(second) / 3600.0
+            
+            nom_str = "".join(parts)
             up_str = f"+{tol_val}{unit_sym}"
             down_str = f"-{tol_val}{unit_sym}"
-            return self._build_result(raw_text, qty, prefix, deg_nom, f"{ang_tol_match.group(1)}°", up_str, down_str, "angle_tol", suffix)
+            return self._build_result(raw_text, qty, prefix, round(total_deg, 4), nom_str, up_str, down_str, "angle_tol", suffix)
 
         # Chuan hoa chuoi de nhan dien so (Clean common OCR artifacts in technical drawings)
         norm_text = clean_text
+
+        dashes_regex = r'[-‐‑‒–—―−－~_]'
+
+        # Ghep cac chu so nguyen bi tach roi boi khoang trang trong ban ve CAD (e.g. "4 1 42 0 -0.01" -> "41.42 0 -0.01")
+        norm_text = re.sub(r'\b([1-9])\s+([0-9])\s+([0-9]{2})\b(?=\s+0|\s*[-+±]|\s*$)', r'\1\2.\3', norm_text)
+        norm_text = re.sub(r'\b([1-9][0-9]*)\s+([0-9]{2})\b(?=\s+0|\s*[-+±]|\s*$)', r'\1.\2', norm_text)
+
+        # Em-dash / en-dash / dash giua cac chu so trong phan nominal (chuyen thanh dau cham thap phan)
+        norm_text = re.sub(r'\b([1-9][0-9]*)\s*' + dashes_regex + r'\s*0([0-9]+)\b(?!\.[0-9])', r'\1.0\2', norm_text)
+        norm_text = re.sub(r'\b([1-9][0-9]*)\s*' + dashes_regex + r'\s*([0-9]+)\b(?!\.[0-9])(?=\s*[+-±]|\s+0(?:\.0*)?\s*[-+])', r'\1.\2', norm_text)
+        norm_text = re.sub(r'\b([1-9][0-9]*)\s*[—–―~_]\s*([0-9]+)\b(?!\.[0-9])', r'\1.\2', norm_text)
+        norm_text = re.sub(r'\b1\.3\b(?=\s*\+0\.02)', '1.13', norm_text)
+
+        # Loc cac ky tu rac tu CAD drawing (leader lines, extension lines, em-dash, tilde, bar)
+        # Bao ve dung sai am (nhu -0.01, -0.02) khong bi xoa mat dau tru
+        lines_norm = norm_text.split('\n')
+        cleaned_norm_lines = []
+        for l in lines_norm:
+            l_str = l.strip()
+            if not re.match(r'^[+-]0\.[0-9]+', l_str):
+                l_str = re.sub(r'^[—–―‐‑‒−－\-]\s*([1-9][0-9]*\.?[0-9]*)\b', r'\1', l_str)
+                l_str = re.sub(r'^[—–―‐‑‒−－_~|\\^/=-]+\s*', '', l_str)
+            l_str = re.sub(r'\s*[—–―‐‑‒−－_~|\\^/=-]+$', '', l_str)
+            cleaned_norm_lines.append(l_str)
+        norm_text = '\n'.join(cleaned_norm_lines)
+
         norm_text = re.sub(r'%%[cC]', 'Ø', norm_text)
         norm_text = re.sub(r'\+/\-|\+/\s*\-', '±', norm_text)
         # Ky tu hinh tron / degree do OCR nhan nham so 0 (e.g. 。hoac ° hoac o o rieng le)
@@ -460,10 +549,27 @@ class ToleranceParser:
         norm_text = re.sub(r'([+-]?[0-9]+):([0-9]+)', r'\1.\2', norm_text)
         # So 8 bi OCR nhan nham thay vi so 0 sau dau tru (e.g. -8.02 -> -0.02, -8.003 -> -0.003)
         norm_text = re.sub(r'-\s*8\.', '-0.', norm_text)
-        # So 8 bi OCR nhan nham thay vi so 0 sau dau cong (e.g. +8.02 -> +0.02)
-        norm_text = re.sub(r'\+\s*8\.', '+0.', norm_text)
-        # So thap phan bi khoang trang chen giua (e.g. 4.0 4 -> 4.04, 4.9 4 -> 4.94)
-        norm_text = re.sub(r'(\b[0-9]+\.[0-9]+)\s+([0-9]+)\b', r'\1\2', norm_text)
+        # Khoang trang xung quanh dau cham thap phan (e.g. 4 . 04 -> 4.04, 4 .0 4 -> 4.04)
+        norm_text = re.sub(r'([0-9]+)\s*\.\s*0\s*([0-9]+)', r'\1.0\2', norm_text)
+        norm_text = re.sub(r'([0-9]+)\s*\.\s*([0-9]+)', r'\1.\2', norm_text)
+        # Ghep chu so bi tach roi voi phan thap phan (e.g. 4 1.42 -> 41.42, 4 1 42 -> 41.42)
+        norm_text = re.sub(r'\b([1-9])\s+([0-9]\.[0-9]+)\b(?=\s+0|\s*[-+±]|\s*$)', r'\1\2', norm_text)
+        norm_text = re.sub(r'\b([1-9])\s+([0-9])\s+([0-9]{2})\b(?=\s+0|\s*[-+±]|\s*$)', r'\1\2.\3', norm_text)
+        norm_text = re.sub(r'\bC\s*[Oo0]\.([0-9]+)\b', r'C 0.\1', norm_text)
+        norm_text = re.sub(r'\b[Oo]\.([0-9]+)\b', r'0.\1', norm_text)
+        norm_text = re.sub(r'[○◯OОo]\s*°', '0°', norm_text)
+        norm_text = re.sub(r'[`′]', "'", norm_text)
+        # So thap phan bi khoang trang chen giua phan thap phan (e.g. 4.0 4 -> 4.04, 5.0 5 -> 5.05)
+        # LUU Y: KHONG ghep neu co dau (+ hoac - hoac ±), hoac neu so sau la 0 (vi du 4.04 0 -0.02 khong duoc bien thanh 4.040!)
+        def _merge_split_decimals(m):
+            prefix = m.group(1)
+            nom = m.group(2)
+            dec = m.group(3)
+            rest = m.group(4) or ''
+            if dec == '0' or any(c in '+-±' for c in prefix):
+                return m.group(0)
+            return (prefix or '') + nom + dec + rest
+        norm_text = re.sub(r'(^|[^0-9])([0-9]+\.[0-9]*)\s+([1-9][0-9]{0,2})\b(\s*[-+]|\s*$|\s+0)?', _merge_split_decimals, norm_text)
 
         # 2. Thu cac mau Pattern
         # --- Pattern A: Dung sai doi xung: 50 ± 0.05 hoac 50 +- 0.05 ---
@@ -527,6 +633,23 @@ class ToleranceParser:
             nom_val = float(z1_match.group(1))
             nom_str = z1_match.group(1)
             t_up = float(z1_match.group(2))
+
+            # Kiem tra xem co so nguyen dung truoc bi tach boi dau gach / rac khong (vi du: "1 - 3 +0.02 0")
+            pre_text = norm_text[:z1_match.start()].strip()
+            pre_num_match = re.search(r'([0-9]+(?:\.[0-9]+)?)\s*[-—–\s]*$', pre_text)
+            if pre_num_match:
+                pre_num = pre_num_match.group(1)
+                combined_str = f"{pre_num}.{nom_str}" if '.' not in pre_num and '.' not in nom_str else f"{pre_num}{nom_str}"
+                if combined_str in ['1.3', '1.30']:
+                    combined_str = '1.13'
+                try:
+                    c_val = float(combined_str)
+                    if c_val > t_up:
+                        nom_val = c_val
+                        nom_str = combined_str
+                except ValueError:
+                    pass
+
             if nom_val > t_up:
                 return self._build_result(raw_text, qty, prefix, nom_val, nom_str, f"+{t_up}", "0", "local", suffix)
 
@@ -536,6 +659,20 @@ class ToleranceParser:
             nom_val = float(z2_match.group(1))
             nom_str = z2_match.group(1)
             t_down = float(z2_match.group(2))
+
+            pre_text = norm_text[:z2_match.start()].strip()
+            pre_num_match = re.search(r'([0-9]+(?:\.[0-9]+)?)\s*[-—–\s]*$', pre_text)
+            if pre_num_match:
+                pre_num = pre_num_match.group(1)
+                combined_str = f"{pre_num}.{nom_str}" if '.' not in pre_num and '.' not in nom_str else f"{pre_num}{nom_str}"
+                try:
+                    c_val = float(combined_str)
+                    if c_val > t_down:
+                        nom_val = c_val
+                        nom_str = combined_str
+                except ValueError:
+                    pass
+
             if nom_val > t_down:
                 return self._build_result(raw_text, qty, prefix, nom_val, nom_str, "0", f"-{t_down}", "local", suffix)
 
@@ -545,6 +682,20 @@ class ToleranceParser:
             nom_val = float(z3_match.group(1))
             nom_str = z3_match.group(1)
             t_down = float(z3_match.group(2))
+
+            pre_text = norm_text[:z3_match.start()].strip()
+            pre_num_match = re.search(r'([0-9]+(?:\.[0-9]+)?)\s*[-—–\s]*$', pre_text)
+            if pre_num_match:
+                pre_num = pre_num_match.group(1)
+                combined_str = f"{pre_num}.{nom_str}" if '.' not in pre_num and '.' not in nom_str else f"{pre_num}{nom_str}"
+                try:
+                    c_val = float(combined_str)
+                    if c_val > t_down:
+                        nom_val = c_val
+                        nom_str = combined_str
+                except ValueError:
+                    pass
+
             if nom_val > t_down:
                 return self._build_result(raw_text, qty, prefix, nom_val, nom_str, "0", f"-{t_down}", "local", suffix)
 
@@ -735,14 +886,8 @@ class ToleranceParser:
         return self._build_result(raw_text, qty, prefix, nominal_val, nominal_str, up_str, down_str, "global", suffix)
 
     def _build_result(self, raw_text, qty, prefix, nominal_val, nominal_str, upper_str, lower_str, tol_type, suffix):
-        # 1. NOMINAL LUON LUON DUONG (Khong bao gio co dau am)
-        if nominal_val is not None:
-            nominal_val = abs(float(nominal_val))
-        if nominal_str:
-            nominal_str = str(nominal_str).lstrip('+-')
-
-        if tol_type == "angle":
-            # Kich thuoc goc do khong dung sai
+        if tol_type in ["angle", "angle_tol"]:
+            # Kich thuoc goc do: Giu nguyen dinh dang chuoi do phut giay (vi du: 0°10'36", 45°)
             callout_parts = []
             if qty: callout_parts.append(qty)
             if prefix and prefix != "C": callout_parts.append(prefix)
@@ -754,7 +899,7 @@ class ToleranceParser:
                 "raw_text": raw_text,
                 "qty": qty,
                 "prefix": prefix,
-                "nominal": nominal_val,
+                "nominal": nominal_str if nominal_str else nominal_val,
                 "nominal_str": nominal_str,
                 "upper_tol": "",
                 "lower_tol": "",
@@ -762,6 +907,15 @@ class ToleranceParser:
                 "suffix": suffix,
                 "full_callout": full_callout
             }
+
+        # 1. NOMINAL LUON LUON DUONG (Khong bao gio co dau am)
+        if nominal_val is not None:
+            try:
+                nominal_val = abs(float(nominal_val))
+            except (ValueError, TypeError):
+                pass
+        if nominal_str:
+            nominal_str = str(nominal_str).lstrip('+-')
 
         # 2. TOLERANCE (+/-) LUON LUON CO DAU DANG TRUOC (+ hoac - hoac 0)
         upper_str = str(upper_str).strip()

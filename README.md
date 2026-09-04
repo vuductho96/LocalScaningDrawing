@@ -27,9 +27,9 @@ python app.py
 4. **Hệ thống Global Constraints**:
    - Tự động điền dung sai chung khi kích thước không ghi dung sai riêng (theo số chữ số thập phân hoặc tiêu chuẩn ISO 2768).
 5. **Thao tác mượt mà trên Canvas**:
-   - Chuột trái: Kéo ô crop ảo màu dạ quang.
-   - Con lăn chuột: Zoom in/out tâm trỏ chuột.
-   - Chuột phải hoặc giữ Space: Kéo di chuyển bản vẽ (Pan).
+    - Chuột trái: Kéo ô crop ảo màu dạ quang.
+    - Giữ Ctrl (hoặc Chuột phải / Space): Kéo di chuyển bản vẽ (Pan).
+    - Con lăn chuột: Zoom in/out tâm trỏ chuột.
 6. **Bảng kết quả & Xuất file**:
    - Cho phép sửa trực tiếp từng ô (Inline editing).
    - Xuất dữ liệu ra file **Excel (.xlsx)** có định dạng màu sắc đẹp mắt và **CSV**.

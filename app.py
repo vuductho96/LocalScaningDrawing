@@ -40,6 +40,8 @@ class CropRequest(BaseModel):
     page_num: int = 0
     crop_box: Dict[str, float]  # { x, y, width, height } tu 0.0 den 1.0
     global_constraints: Optional[Dict[str, Any]] = None
+    page_rotation: int = 0  # Goc xoay cua trang PDF: 0, 90, 180, 270
+    crop_rotation: int = 0  # Goc xoay rieng cua vung crop: 0, 90, 180, 270
 
 class ExportRequest(BaseModel):
     drawing_name: Optional[str] = "BanVeKyThuat"
@@ -119,7 +121,7 @@ async def upload_pdf(file: UploadFile = File(...)):
     }
 
 @app.get("/api/page_image")
-async def get_page_image(file_id: str, page: int = 0):
+async def get_page_image(file_id: str, page: int = 0, rotation: int = 0):
     if file_id not in active_files:
         raise HTTPException(status_code=404, detail="Khong tim thay file PDF da upload")
     
@@ -127,7 +129,7 @@ async def get_page_image(file_id: str, page: int = 0):
     pdf_path = file_info["path"]
     
     try:
-        cache_path, w, h = pdf_processor.render_page(pdf_path, page_num=page, dpi=200)
+        cache_path, w, h = pdf_processor.render_page(pdf_path, page_num=page, dpi=200, rotation=rotation)
         return FileResponse(cache_path, media_type="image/png")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Loi lay anh trang {page}: {str(e)}")
@@ -145,7 +147,9 @@ async def crop_ocr(req: CropRequest):
             page_num=req.page_num,
             crop_box=req.crop_box,
             global_constraints=req.global_constraints,
-            dpi=200
+            dpi=200,
+            page_rotation=req.page_rotation,
+            crop_rotation=req.crop_rotation
         )
         return result
     except Exception as e:
@@ -216,13 +220,13 @@ async def export_excel(req: ExportRequest):
     right_align = Alignment(horizontal="right", vertical="center")
 
     # Title & Metadata
-    ws.merge_cells("A1:H1")
+    ws.merge_cells("A1:I1")
     ws["A1"] = f"BẢNG BÓC TÁCH KÍCH THƯỚC & DUNG SAI BẢN VẼ: {req.drawing_name}"
     ws["A1"].font = title_font
     ws["A1"].alignment = left_align
     ws.row_dimensions[1].height = 28
 
-    ws.merge_cells("A2:H2")
+    ws.merge_cells("A2:I2")
     ws["A2"] = f"Quy tắc dung sai chung (Global Constraints): {req.global_constraints_summary or 'Theo số chữ số thập phân'}"
     ws["A2"].font = subtitle_font
     ws["A2"].alignment = left_align
@@ -238,6 +242,7 @@ async def export_excel(req: ExportRequest):
         ("Dung Sai Dưới (-)", 18, center_align),
         ("Loại Dung Sai", 16, center_align),
         ("Kích Thước Đầy Đủ (Callout)", 32, left_align),
+        ("Tọa Độ Crop (X, Y, W, H)", 26, center_align),
     ]
 
     header_row = 4
@@ -277,7 +282,12 @@ async def export_excel(req: ExportRequest):
 
         # Nominal
         nom = r.get("nominal")
-        c4 = ws.cell(row=row_num, column=4, value=nom if nom is not None else r.get("nominal_str", ""))
+        nom_str = r.get("nominal_str", "")
+        # Neu la goc do (DMS), giu nguyen chuoi do phut giay day du (vi du: 0°10'36", 4°30'23")
+        if r.get("tol_type") in ["angle", "angle_tol"] or any(c in str(nom_str) for c in ['°', "'", '"']):
+            c4 = ws.cell(row=row_num, column=4, value=nom_str)
+        else:
+            c4 = ws.cell(row=row_num, column=4, value=nom if nom is not None else nom_str)
         c4.alignment = right_align
         c4.font = nominal_font
         c4.border = thin_border
@@ -294,10 +304,9 @@ async def export_excel(req: ExportRequest):
         c6.font = data_font
         c6.border = thin_border
 
-        # Type
+        # Tol Type
         ttype = r.get("tol_type", "local")
-        type_str = "Dung sai riêng" if "local" in ttype else "Dung sai chung"
-        c7 = ws.cell(row=row_num, column=7, value=type_str)
+        c7 = ws.cell(row=row_num, column=7, value=ttype.capitalize())
         c7.alignment = center_align
         c7.font = global_font if "global" in ttype else local_font
         c7.border = thin_border
@@ -307,6 +316,18 @@ async def export_excel(req: ExportRequest):
         c8.alignment = left_align
         c8.font = data_font
         c8.border = thin_border
+
+        # Tọa độ Crop (X, Y, W, H)
+        b = r.get("box") or r.get("raw_box") or {}
+        p_num = r.get("page", 0)
+        if b and b.get("w", 0) > 0:
+            coord_val = f"P{p_num + 1}: X={int(b.get('x',0))}, Y={int(b.get('y',0))}, W={int(b.get('w',0))}, H={int(b.get('h',0))}"
+        else:
+            coord_val = "-"
+        c9 = ws.cell(row=row_num, column=9, value=coord_val)
+        c9.alignment = center_align
+        c9.font = data_font
+        c9.border = thin_border
 
     stream = io.BytesIO()
     wb.save(stream)
@@ -323,17 +344,22 @@ async def export_excel(req: ExportRequest):
 async def export_csv(req: ExportRequest):
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["STT", "So Luong", "Ky Hieu", "Nominal", "Dung Sai Tren (+)", "Dung Sai Duoi (-)", "Loai Dung Sai", "Full Callout"])
+    writer.writerow(["STT", "So Luong", "Ky Hieu", "Nominal", "Dung Sai Tren (+)", "Dung Sai Duoi (-)", "Loai Dung Sai", "Full Callout", "Toa Do Crop (X,Y,W,H)"])
     for i, r in enumerate(req.rows):
+        nom_val = r.get("nominal_str") if (r.get("tol_type") in ["angle", "angle_tol"] or any(c in str(r.get("nominal_str", "")) for c in ['°', "'", '"'])) else r.get("nominal", "")
+        b = r.get("box") or r.get("raw_box") or {}
+        p_num = r.get("page", 0)
+        coord_val = f"P{p_num + 1}: X={int(b.get('x',0))} Y={int(b.get('y',0))} W={int(b.get('w',0))} H={int(b.get('h',0))}" if b and b.get("w", 0) > 0 else ""
         writer.writerow([
             i + 1,
             r.get("qty", ""),
             r.get("prefix", ""),
-            r.get("nominal", ""),
+            nom_val,
             r.get("upper_tol", ""),
             r.get("lower_tol", ""),
             r.get("tol_type", ""),
-            r.get("full_callout", "")
+            r.get("full_callout", ""),
+            coord_val
         ])
     output.seek(0)
     filename = f"{req.drawing_name}_Tolerances.csv"
@@ -342,6 +368,48 @@ async def export_csv(req: ExportRequest):
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
+
+class CropCoordsRequest(BaseModel):
+    file_id: str
+    page_num: int = 0
+    x: float
+    y: float
+    w: float
+    h: float
+    crop_rotation: int = 0
+    global_constraints: Optional[Dict[str, Any]] = None
+
+@app.post("/api/crop-by-coords")
+async def crop_by_coords(req: CropCoordsRequest):
+    """
+    Endpoint ho tro AI / Script debug: Tu dong crop theo toa do pixel chinh xac tren ban ve.
+    """
+    if req.file_id not in active_files:
+        raise HTTPException(status_code=404, detail="Khong tim thay file PDF da upload")
+
+    pdf_path = active_files[req.file_id]["path"]
+    cache_path, img_w, img_h = pdf_processor.render_page(pdf_path, page_num=req.page_num, dpi=200)
+
+    norm_box = {
+        "x": max(0.0, req.x / img_w),
+        "y": max(0.0, req.y / img_h),
+        "width": min(1.0, req.w / img_w),
+        "height": min(1.0, req.h / img_h)
+    }
+
+    try:
+        result = pdf_processor.crop_and_extract(
+            pdf_path=pdf_path,
+            page_num=req.page_num,
+            crop_box=norm_box,
+            global_constraints=req.global_constraints,
+            dpi=200,
+            page_rotation=0,
+            crop_rotation=req.crop_rotation
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Loi OCR theo toa do: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

@@ -8,3 +8,5 @@ uploads/*.pdf
 env/
 venv/
 *.log
+*.png
+ocr_test_results.json

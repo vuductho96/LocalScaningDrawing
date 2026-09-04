@@ -18,6 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Mouse interaction
         isLeftDown: false,
         isPanning: false,
+        isPanModeActive: false,
         startX: 0,
         startY: 0,
         currentX: 0,
@@ -27,6 +28,10 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Extracted items
         rows: [],
+        
+        // Rotation (0, 90, 180, 270)
+        pageRotation: 0,
+        cropRotation: 0,
         
         // Global Constraints Settings (0, 0.0, 0.00, 0.000, 0.0000, 0.00000)
         globalConstraints: {
@@ -58,6 +63,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const zoomOutBtn = document.getElementById('zoomOutBtn');
     const fitScreenBtn = document.getElementById('fitScreenBtn');
     const resetZoomBtn = document.getElementById('resetZoomBtn');
+    const panToolBtn = document.getElementById('panToolBtn');
+
+    const rotatePdfBtn = document.getElementById('rotatePdfBtn');
+    const pageRotationText = document.getElementById('pageRotationText');
+    const rotateCropBtn = document.getElementById('rotateCropBtn');
+    const cropRotationText = document.getElementById('cropRotationText');
     
     const pdfFileInput = document.getElementById('pdfFileInput');
     const pdfFileInput2 = document.getElementById('pdfFileInput2');
@@ -130,7 +141,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // 1. Ve anh ban ve
         ctx.drawImage(state.image, 0, 0, state.pageWidth, state.pageHeight);
 
-        // 2. Ve cac o da crop truoc do (highlight overlay)
+        // 2. Ve cac o da crop truoc do (highlight overlay kem toa do X, Y)
         state.rows.forEach(r => {
             if (r.page === state.currentPage && r.raw_box) {
                 ctx.fillStyle = 'rgba(59, 130, 246, 0.15)';
@@ -139,16 +150,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 ctx.fillRect(r.raw_box.x, r.raw_box.y, r.raw_box.w, r.raw_box.h);
                 ctx.strokeRect(r.raw_box.x, r.raw_box.y, r.raw_box.w, r.raw_box.h);
 
-                // Ve nhan so thu tu
-                ctx.fillStyle = '#2563eb';
-                ctx.fillRect(r.raw_box.x, r.raw_box.y - 18 / state.scale, 24 / state.scale, 18 / state.scale);
-                ctx.fillStyle = '#ffffff';
-                ctx.font = `${Math.max(10, 11 / state.scale)}px sans-serif`;
-                ctx.fillText(`#${r.id}`, r.raw_box.x + 3 / state.scale, r.raw_box.y - 5 / state.scale);
+                // Ve nhan so thu tu va toa do X, Y
+                const labelText = `#${r.id} (${Math.round(r.raw_box.x)}, ${Math.round(r.raw_box.y)})`;
+                ctx.font = `bold ${Math.max(10, 11 / state.scale)}px monospace`;
+                const pad = 4 / state.scale;
+                const textWidth = ctx.measureText(labelText).width;
+
+                ctx.fillStyle = '#1e3a8a';
+                ctx.fillRect(r.raw_box.x, r.raw_box.y - 18 / state.scale, textWidth + pad * 2, 18 / state.scale);
+                ctx.strokeStyle = '#3b82f6';
+                ctx.strokeRect(r.raw_box.x, r.raw_box.y - 18 / state.scale, textWidth + pad * 2, 18 / state.scale);
+                ctx.fillStyle = '#67e8f9';
+                ctx.fillText(labelText, r.raw_box.x + pad, r.raw_box.y - 5 / state.scale);
             }
         });
 
-        // 3. Ve o crop dang keo (Active selection box)
+        // 3. Ve o crop dang keo (Active selection box kem toa do Live)
         if (state.isLeftDown) {
             const x = Math.min(state.startX, state.currentX);
             const y = Math.min(state.startY, state.currentY);
@@ -163,6 +180,15 @@ document.addEventListener('DOMContentLoaded', () => {
             ctx.fillRect(x, y, w, h);
             ctx.strokeRect(x, y, w, h);
             ctx.setLineDash([]);
+
+            // Nhan toa do thuc thoi
+            const liveCoord = `X:${Math.round(x)} Y:${Math.round(y)} (${Math.round(w)}x${Math.round(h)})`;
+            ctx.font = `bold ${Math.max(10, 11 / state.scale)}px monospace`;
+            const liveWidth = ctx.measureText(liveCoord).width;
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+            ctx.fillRect(x, y - 20 / state.scale, liveWidth + 8 / state.scale, 18 / state.scale);
+            ctx.fillStyle = '#22d3ee';
+            ctx.fillText(liveCoord, x + 4 / state.scale, y - 6 / state.scale);
         }
 
         ctx.restore();
@@ -195,12 +221,83 @@ document.addEventListener('DOMContentLoaded', () => {
         zoomLevelText.textContent = `${Math.round(state.scale * 100)}%`;
     }
 
+    // Pan Mode Toggle function
+    function setPanMode(active) {
+        state.isPanModeActive = active;
+        if (!panToolBtn) return;
+        if (active) {
+            panToolBtn.classList.add('bg-blue-600', 'text-white', 'shadow-md', 'shadow-blue-500/30');
+            panToolBtn.classList.remove('text-slate-300', 'hover:bg-slate-700');
+            if (!state.isLeftDown) {
+                viewport.style.cursor = 'grab';
+            }
+        } else {
+            panToolBtn.classList.remove('bg-blue-600', 'text-white', 'shadow-md', 'shadow-blue-500/30');
+            panToolBtn.classList.add('text-slate-300', 'hover:bg-slate-700');
+            if (!state.isLeftDown && !isCtrlPressed && !isSpacePressed) {
+                viewport.style.cursor = 'crosshair';
+            }
+        }
+    }
+
+    if (panToolBtn) {
+        panToolBtn.addEventListener('click', () => {
+            setPanMode(!state.isPanModeActive);
+        });
+    }
+
+    // Key states for Pan modifiers (Ctrl, Space)
+    let isCtrlPressed = false;
+    let isSpacePressed = false;
+
+    window.addEventListener('keydown', (e) => {
+        // Phím H hoặc P để bật/tắt chế độ Pan nhanh
+        if ((e.key === 'h' || e.key === 'H' || e.key === 'p' || e.key === 'P') && 
+            e.target.tagName !== 'INPUT' && !e.target.isContentEditable) {
+            setPanMode(!state.isPanModeActive);
+            return;
+        }
+
+        if (e.key === 'Escape' && state.isPanModeActive) {
+            setPanMode(false);
+            return;
+        }
+
+        if (e.key === 'Control' || e.ctrlKey) {
+            isCtrlPressed = true;
+            if (!state.isLeftDown && state.image && !state.isPanning) {
+                viewport.style.cursor = 'grab';
+            }
+        }
+        if (e.code === 'Space' && e.target.tagName !== 'INPUT' && !e.target.isContentEditable) {
+            isSpacePressed = true;
+            if (!state.isLeftDown && state.image && !state.isPanning) {
+                viewport.style.cursor = 'grab';
+            }
+        }
+    });
+
+    window.addEventListener('keyup', (e) => {
+        if (e.key === 'Control') {
+            isCtrlPressed = false;
+            if (!state.isPanning) {
+                viewport.style.cursor = (state.isPanModeActive || isSpacePressed) ? 'grab' : 'crosshair';
+            }
+        }
+        if (e.code === 'Space') {
+            isSpacePressed = false;
+            if (!state.isPanning) {
+                viewport.style.cursor = (state.isPanModeActive || isCtrlPressed) ? 'grab' : 'crosshair';
+            }
+        }
+    });
+
     // Canvas Mouse Events
     viewport.addEventListener('mousedown', (e) => {
         if (!state.image) return;
         
-        // Chuot phai (button 2) hoac giu phim Space -> Pan
-        if (e.button === 2 || e.spaceKey) {
+        // Pan khi: Bật nút Pan Mode trên menu, hoặc đè Ctrl, hoặc Chuột phải (button 2), hoặc giữ Space
+        if (state.isPanModeActive || e.ctrlKey || isCtrlPressed || e.button === 2 || isSpacePressed) {
             state.isPanning = true;
             state.panStartX = e.clientX - state.panX;
             state.panStartY = e.clientY - state.panY;
@@ -209,7 +306,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Chuot trai (button 0) -> Crop selection
+        // Chuột trái (button 0) ở chế độ bình thường -> Kéo ô Crop selection
         if (e.button === 0) {
             const pt = screenToImage(e.clientX, e.clientY);
             state.isLeftDown = true;
@@ -238,9 +335,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     window.addEventListener('mouseup', async (e) => {
-        if (state.isPanning && (e.button === 2 || e.spaceKey)) {
+        if (state.isPanning) {
             state.isPanning = false;
-            viewport.style.cursor = 'crosshair';
+            viewport.style.cursor = (state.isPanModeActive || isCtrlPressed || isSpacePressed || e.ctrlKey) ? 'grab' : 'crosshair';
             return;
         }
 
@@ -307,6 +404,42 @@ document.addEventListener('DOMContentLoaded', () => {
         render();
     });
 
+    // Rotate PDF Button (Xoay trang PDF 90 do)
+    if (rotatePdfBtn) {
+        rotatePdfBtn.addEventListener('click', async () => {
+            if (!state.fileId) return;
+            state.pageRotation = (state.pageRotation + 90) % 360;
+            if (pageRotationText) pageRotationText.textContent = `${state.pageRotation}°`;
+            loadingText.textContent = `Đang xoay bản vẽ ${state.pageRotation}°...`;
+            loadingOverlay.classList.remove('hidden');
+            try {
+                await loadPageImage(state.currentPage);
+                showToast(`Đã xoay trang bản vẽ: ${state.pageRotation}°`, 'success');
+            } catch (err) {
+                alert('Lỗi xoay bản vẽ: ' + err.message);
+            } finally {
+                loadingOverlay.classList.add('hidden');
+            }
+        });
+    }
+
+    // Rotate Crop Button (Goc xoay vung crop khi OCR)
+    if (rotateCropBtn) {
+        rotateCropBtn.addEventListener('click', () => {
+            state.cropRotation = (state.cropRotation + 90) % 360;
+            if (cropRotationText) cropRotationText.textContent = `${state.cropRotation}°`;
+            if (state.cropRotation !== 0) {
+                rotateCropBtn.classList.add('bg-cyan-600', 'text-white', 'shadow-md', 'shadow-cyan-500/30');
+                rotateCropBtn.classList.remove('text-slate-300', 'hover:bg-slate-700');
+                showToast(`Góc xoay crop OCR: ${state.cropRotation}° (Dành cho kích thước chữ dọc)`, 'success');
+            } else {
+                rotateCropBtn.classList.remove('bg-cyan-600', 'text-white', 'shadow-md', 'shadow-cyan-500/30');
+                rotateCropBtn.classList.add('text-slate-300', 'hover:bg-slate-700');
+                showToast(`Góc xoay crop: 0° (Mặc định ngang)`, 'info');
+            }
+        });
+    }
+
     // File Upload Handler
     async function handleFileUpload(file) {
         if (!file || !file.name.toLowerCase().endsWith('.pdf')) {
@@ -332,6 +465,14 @@ document.addEventListener('DOMContentLoaded', () => {
             state.filename = data.filename;
             state.pageCount = data.page_count;
             state.currentPage = 0;
+            state.pageRotation = 0;
+            state.cropRotation = 0;
+            if (pageRotationText) pageRotationText.textContent = '0°';
+            if (cropRotationText) cropRotationText.textContent = '0°';
+            if (rotateCropBtn) {
+                rotateCropBtn.classList.remove('bg-cyan-600', 'text-white', 'shadow-md', 'shadow-cyan-500/30');
+                rotateCropBtn.classList.add('text-slate-300', 'hover:bg-slate-700');
+            }
             state.rows = [];
             renderTable();
 
@@ -388,7 +529,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 resolve();
             };
             img.onerror = reject;
-            img.src = `/api/page_image?file_id=${state.fileId}&page=${pageNum}&t=${Date.now()}`;
+            img.src = `/api/page_image?file_id=${state.fileId}&page=${pageNum}&rotation=${state.pageRotation}&t=${Date.now()}`;
         });
     }
 
@@ -414,10 +555,14 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Process Crop Box to OCR
-    async function processCrop(x, y, w, h) {
+    async function processCrop(x, y, w, h, customCropRot = null, targetRowId = null) {
         if (!state.fileId) return;
 
-        loadingText.textContent = 'Đang nhận diện ký tự & phân tách dung sai...';
+        const cropRot = customCropRot !== null ? customCropRot : state.cropRotation;
+
+        loadingText.textContent = cropRot !== 0 
+            ? `Đang xoay ${cropRot}° & nhận diện ký tự...`
+            : 'Đang nhận diện ký tự & phân tách dung sai...';
         loadingOverlay.classList.remove('hidden');
 
         // Toa do chuan hoa 0.0 -> 1.0
@@ -436,15 +581,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     file_id: state.fileId,
                     page_num: state.currentPage,
                     crop_box: normBox,
-                    global_constraints: state.globalConstraints
+                    global_constraints: state.globalConstraints,
+                    page_rotation: state.pageRotation,
+                    crop_rotation: cropRot
                 })
             });
             const data = await resp.json();
             if (!resp.ok) throw new Error(data.detail || 'Lỗi xử lý OCR');
 
-            const newRow = {
-                id: state.rows.length + 1,
-                page: state.currentPage,
+            const rowData = {
                 thumbnail: data.thumbnail,
                 qty: data.qty || '',
                 prefix: data.prefix || '',
@@ -455,10 +600,34 @@ document.addEventListener('DOMContentLoaded', () => {
                 tol_type: data.tol_type || 'local',
                 full_callout: data.full_callout || data.raw_text || '',
                 raw_text: data.raw_text || '',
-                raw_box: { x, y, w, h }
+                raw_box: { x, y, w, h },
+                box: data.box || { x, y, w, h },
+                norm_box: data.norm_box || normBox,
+                page: state.currentPage,
+                crop_rotation: cropRot
             };
 
-            state.rows.push(newRow);
+            if (targetRowId !== null) {
+                const existingIdx = state.rows.findIndex(r => r.id === targetRowId);
+                if (existingIdx !== -1) {
+                    state.rows[existingIdx] = {
+                        ...state.rows[existingIdx],
+                        ...rowData
+                    };
+                    showToast(`Đã xoay ${cropRot}° và quét lại mục #${targetRowId}`, 'success');
+                }
+            } else {
+                const newRow = {
+                    id: state.rows.length + 1,
+                    page: state.currentPage,
+                    ...rowData
+                };
+                state.rows.push(newRow);
+                if (cropRot !== 0) {
+                    showToast(`Đã quét kích thước với góc xoay ${cropRot}°`, 'success');
+                }
+            }
+
             renderTable();
             render(); // Ve them o crop overlay
 
@@ -501,10 +670,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 badgeText = 'Global';
             }
 
+            const safeThumb = (row.thumbnail && row.thumbnail !== 'undefined') 
+                ? row.thumbnail 
+                : 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="48" height="28" fill="%23334155"><rect width="48" height="28" fill="%231e293b"/><text x="24" y="17" fill="%2364748b" font-size="9" text-anchor="middle" font-family="sans-serif">Crop</text></svg>';
+
+            const box = row.box || row.raw_box || { x: 0, y: 0, w: 0, h: 0 };
+            const coordStr = `X:${Math.round(box.x)} Y:${Math.round(box.y)}`;
+            const coordTooltip = `Tọa độ Crop:\nX=${Math.round(box.x)}, Y=${Math.round(box.y)}, W=${Math.round(box.w)}, H=${Math.round(box.h)}\nTrang: ${row.page !== undefined ? row.page + 1 : 1}\nNhấp để sao chép tọa độ JSON cho AI/Debug`;
+
             tr.innerHTML = `
                 <td class="py-2 px-2 text-center text-slate-500 font-mono text-[11px]">${idx + 1}</td>
                 <td class="py-2 px-2 text-center">
-                    <img src="${row.thumbnail}" class="w-12 h-7 object-contain bg-white rounded border border-slate-700 cursor-pointer hover:scale-125 transition origin-left shadow" data-img="${row.thumbnail}">
+                    <img src="${safeThumb}" class="w-12 h-7 object-contain bg-white rounded border border-slate-700 cursor-pointer hover:scale-125 transition origin-left shadow mx-auto" data-img="${safeThumb}">
+                    <button class="copy-coords-btn text-[9px] font-mono text-cyan-400/90 bg-slate-900/90 px-1 py-0.5 rounded mt-1 border border-slate-700/80 hover:border-cyan-400 hover:text-cyan-200 hover:bg-slate-800 transition block mx-auto text-center cursor-pointer shadow-sm" title="${coordTooltip}">
+                        <i class="fa-solid fa-crosshairs text-[8px] text-cyan-500 mr-0.5"></i>${coordStr}
+                    </button>
                 </td>
                 <td class="py-2 px-2">
                     <span class="text-[11px] font-mono text-slate-400 bg-slate-800/80 px-1.5 py-0.5 rounded border border-slate-700/60 break-all select-all block max-w-[130px] truncate" title="${row.raw_text.replace(/"/g, '&quot;')}">${row.raw_text.replace(/\n/g, ' ') || '-'}</span>
@@ -528,8 +708,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td class="py-2 px-2 text-center">
                     <span class="text-[10px] px-1.5 py-0.5 rounded border font-mono ${badgeClass}">${badgeText}</span>
                 </td>
-                <td class="py-2 px-2 text-center space-x-1">
-                    <button class="text-slate-500 hover:text-slate-300 delete-btn p-1" title="Xóa dòng"><i class="fa-solid fa-xmark"></i></button>
+                <td class="py-2 px-2 text-center whitespace-nowrap">
+                    <button class="rotate-row-btn text-slate-400 hover:text-cyan-400 p-1 mr-1 transition" title="Xoay ảnh 90° và quét lại OCR (Dành cho kích thước dọc)"><i class="fa-solid fa-arrow-rotate-right"></i></button>
+                    <button class="text-slate-500 hover:text-red-400 delete-btn p-1 transition" title="Xóa dòng"><i class="fa-solid fa-xmark"></i></button>
                 </td>
             `;
 
@@ -539,6 +720,43 @@ document.addEventListener('DOMContentLoaded', () => {
                 previewImg.src = row.thumbnail;
                 previewModal.classList.remove('hidden');
             });
+
+            // Rotate row 90 deg and re-OCR
+            const rotateRowBtn = tr.querySelector('.rotate-row-btn');
+            if (rotateRowBtn) {
+                rotateRowBtn.addEventListener('click', async () => {
+                    if (row.raw_box) {
+                        const curRot = row.crop_rotation || 0;
+                        const nextRot = (curRot + 90) % 360;
+                        await processCrop(row.raw_box.x, row.raw_box.y, row.raw_box.w, row.raw_box.h, nextRot, row.id);
+                    }
+                });
+            }
+
+            // Copy coordinates JSON for AI / debug
+            const copyCoordBtn = tr.querySelector('.copy-coords-btn');
+            if (copyCoordBtn) {
+                copyCoordBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const b = row.box || row.raw_box || { x: 0, y: 0, w: 0, h: 0 };
+                    const coordJson = JSON.stringify({
+                        id: row.id,
+                        page: row.page ?? state.currentPage,
+                        box: b,
+                        norm_box: row.norm_box || {
+                            x: b.x / state.pageWidth,
+                            y: b.y / state.pageHeight,
+                            width: b.w / state.pageWidth,
+                            height: b.h / state.pageHeight
+                        }
+                    }, null, 2);
+                    navigator.clipboard.writeText(coordJson).then(() => {
+                        showToast(`📋 Đã sao chép tọa độ mục #${idx + 1} (${coordStr}) vào Clipboard`, 'success');
+                    }).catch(() => {
+                        showToast(`Tọa độ #${idx + 1}: ${coordStr}`, 'info');
+                    });
+                });
+            }
 
             // Inline edit listeners with Real-Time Adaptive Feedback Loop
             tr.querySelectorAll('.editable-cell').forEach(cell => {

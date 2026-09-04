@@ -90,13 +90,30 @@
                 <button id="resetZoomBtn" class="p-1.5 text-slate-300 hover:text-white hover:bg-slate-700 rounded transition" title="Khôi phục gốc (1:1)">
                     <i class="fa-solid fa-rotate-left"></i>
                 </button>
+                <span class="w-px h-4 bg-slate-700 mx-0.5"></span>
+                <button id="panToolBtn" class="p-1.5 text-slate-300 hover:text-white hover:bg-slate-700 rounded transition" title="Chế độ Pan di chuyển bản vẽ (Phím H hoặc Giữ Ctrl)">
+                    <i class="fa-solid fa-hand"></i>
+                </button>
+                <span class="w-px h-4 bg-slate-700 mx-0.5"></span>
+                <!-- Rotate PDF Button -->
+                <button id="rotatePdfBtn" class="p-1.5 text-slate-300 hover:text-white hover:bg-slate-700 rounded transition flex items-center gap-1" title="Xoay trang bản vẽ PDF 90° (Theo chiều kim đồng hồ)">
+                    <i class="fa-solid fa-arrows-rotate"></i>
+                    <span class="text-[11px] font-medium hidden sm:inline">PDF</span>
+                    <span id="pageRotationText" class="text-[10px] font-mono text-blue-400 font-bold">0°</span>
+                </button>
+                <!-- Rotate Crop Button -->
+                <button id="rotateCropBtn" class="p-1.5 text-slate-300 hover:text-white hover:bg-slate-700 rounded transition flex items-center gap-1" title="Góc xoay vùng crop khi OCR (Xoay kích thước chữ dọc sang ngang: 0°, 90°, 180°, 270°)">
+                    <i class="fa-solid fa-crop-simple"></i>
+                    <span class="text-[11px] font-medium hidden sm:inline">Crop</span>
+                    <span id="cropRotationText" class="text-[10px] font-mono text-cyan-400 font-bold">0°</span>
+                </button>
             </div>
 
             <!-- Hint Tooltip -->
             <div class="absolute top-3 right-3 z-10 bg-slate-800/80 backdrop-blur border border-slate-700/60 rounded px-2.5 py-1 text-[11px] text-slate-400 flex items-center gap-2 pointer-events-none">
                 <span><span class="text-blue-400 font-semibold">Chuột trái:</span> Kéo ô crop</span>
                 <span>•</span>
-                <span><span class="text-blue-400 font-semibold">Chuột phải / Space:</span> Kéo di chuyển (Pan)</span>
+                <span><span class="text-blue-400 font-semibold">Nút Pan / Giữ Ctrl:</span> Di chuyển (Pan)</span>
                 <span>•</span>
                 <span><span class="text-blue-400 font-semibold">Lăn chuột:</span> Zoom</span>
             </div>
@@ -154,8 +171,7 @@
                             <th class="py-1.5 px-2 w-24">Nominal</th>
                             <th class="py-1.5 px-2 w-24 text-center">Dung sai (+/-)</th>
                             <th class="py-1.5 px-2 w-32">Parse (Callout)</th>
-                            <th class="py-1.5 px-2 w-16 text-center">Loại</th>
-                            <th class="py-1.5 px-2 w-8 text-center"></th>
+                            <th class="py-1.5 px-2 w-14 text-center"></th>
                         </tr>
                     </thead>
                     <tbody id="resultsTableBody" class="divide-y divide-slate-800/60 text-xs">

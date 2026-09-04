@@ -1,0 +1,453 @@
+[
+  {
+    "stt": 1,
+    "image_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_01.png",
+    "rotated_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_01_rot.png",
+    "is_vertical": true,
+    "coordinates": "X=227, Y=261, W=52, H=104",
+    "ground_truth": {
+      "full_callout": "C 0.5 ±0.1",
+      "nominal": "0.5"
+    }
+  },
+  {
+    "stt": 2,
+    "image_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_02.png",
+    "rotated_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_02_rot.png",
+    "is_vertical": true,
+    "coordinates": "X=454, Y=292, W=35, H=74",
+    "ground_truth": {
+      "full_callout": "0.5 ±0.1",
+      "nominal": 0.5
+    }
+  },
+  {
+    "stt": 3,
+    "image_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_03.png",
+    "rotated_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_03_rot.png",
+    "is_vertical": true,
+    "coordinates": "X=170, Y=502, W=49, H=113",
+    "ground_truth": {
+      "full_callout": "C 0.5 ±0.1",
+      "nominal": "0.5"
+    }
+  },
+  {
+    "stt": 4,
+    "image_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_04.png",
+    "rotated_file": null,
+    "is_vertical": false,
+    "coordinates": "X=454, Y=466, W=42, H=37",
+    "ground_truth": {
+      "full_callout": "2 ±0.2",
+      "nominal": "2"
+    }
+  },
+  {
+    "stt": 5,
+    "image_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_05.png",
+    "rotated_file": null,
+    "is_vertical": false,
+    "coordinates": "X=535, Y=598, W=185, H=45",
+    "ground_truth": {
+      "full_callout": "0.008 ±0.001",
+      "nominal": 0.008
+    }
+  },
+  {
+    "stt": 6,
+    "image_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_06.png",
+    "rotated_file": null,
+    "is_vertical": false,
+    "coordinates": "X=800, Y=535, W=165, H=49",
+    "ground_truth": {
+      "full_callout": "5.4 0/-0.002",
+      "nominal": "5.4"
+    }
+  },
+  {
+    "stt": 7,
+    "image_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_07.png",
+    "rotated_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_07_rot.png",
+    "is_vertical": true,
+    "coordinates": "X=1167, Y=257, W=42, H=104",
+    "ground_truth": {
+      "full_callout": "3x 3 0/-0.002",
+      "nominal": 3.0
+    }
+  },
+  {
+    "stt": 8,
+    "image_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_08.png",
+    "rotated_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_08_rot.png",
+    "is_vertical": true,
+    "coordinates": "X=1169, Y=510, W=40, H=76",
+    "ground_truth": {
+      "full_callout": "0.8 ±0.1",
+      "nominal": "0.8"
+    }
+  },
+  {
+    "stt": 9,
+    "image_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_09.png",
+    "rotated_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_09_rot.png",
+    "is_vertical": true,
+    "coordinates": "X=1229, Y=404, W=32, H=67",
+    "ground_truth": {
+      "full_callout": "3.8 ±0.1",
+      "nominal": "3.8"
+    }
+  },
+  {
+    "stt": 10,
+    "image_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_10.png",
+    "rotated_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_10_rot.png",
+    "is_vertical": true,
+    "coordinates": "X=1330, Y=314, W=38, H=159",
+    "ground_truth": {
+      "full_callout": "2.75 ±0.01",
+      "nominal": 2.75
+    }
+  },
+  {
+    "stt": 11,
+    "image_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_11.png",
+    "rotated_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_11_rot.png",
+    "is_vertical": true,
+    "coordinates": "X=1383, Y=157, W=45, H=177",
+    "ground_truth": {
+      "full_callout": "2.306 ±0.01",
+      "nominal": "2.306"
+    }
+  },
+  {
+    "stt": 12,
+    "image_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_12.png",
+    "rotated_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_12_rot.png",
+    "is_vertical": true,
+    "coordinates": "X=1441, Y=169, W=43, H=169",
+    "ground_truth": {
+      "full_callout": "0.29 +0.004/+0.001",
+      "nominal": "0.29"
+    }
+  },
+  {
+    "stt": 13,
+    "image_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_13.png",
+    "rotated_file": null,
+    "is_vertical": false,
+    "coordinates": "X=1526, Y=201, W=207, H=45",
+    "ground_truth": {
+      "full_callout": "0°10'36\"",
+      "nominal": 0.1767
+    }
+  },
+  {
+    "stt": 14,
+    "image_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_14.png",
+    "rotated_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_14_rot.png",
+    "is_vertical": true,
+    "coordinates": "X=1821, Y=158, W=53, H=173",
+    "ground_truth": {
+      "full_callout": "0.24 +0.004/+0.001",
+      "nominal": "0.24"
+    }
+  },
+  {
+    "stt": 15,
+    "image_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_15.png",
+    "rotated_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_15_rot.png",
+    "is_vertical": true,
+    "coordinates": "X=1920, Y=125, W=42, H=183",
+    "ground_truth": {
+      "full_callout": "41.42 0/-0.01",
+      "nominal": 41.42
+    }
+  },
+  {
+    "stt": 16,
+    "image_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_16.png",
+    "rotated_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_16_rot.png",
+    "is_vertical": true,
+    "coordinates": "X=2454, Y=241, W=55, H=96",
+    "ground_truth": {
+      "full_callout": "C 0.5 ±0.1",
+      "nominal": 0.5
+    }
+  },
+  {
+    "stt": 17,
+    "image_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_17.png",
+    "rotated_file": null,
+    "is_vertical": false,
+    "coordinates": "X=2966, Y=507, W=107, H=89",
+    "ground_truth": {
+      "full_callout": "C 0.5 ±0.1",
+      "nominal": 0.5
+    }
+  },
+  {
+    "stt": 18,
+    "image_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_18.png",
+    "rotated_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_18_rot.png",
+    "is_vertical": true,
+    "coordinates": "X=2780, Y=514, W=56, H=108",
+    "ground_truth": {
+      "full_callout": "5 +0.005/0",
+      "nominal": "5"
+    }
+  },
+  {
+    "stt": 19,
+    "image_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_19.png",
+    "rotated_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_19_rot.png",
+    "is_vertical": true,
+    "coordinates": "X=2374, Y=515, W=49, H=101",
+    "ground_truth": {
+      "full_callout": "C 0.5 ±0.1",
+      "nominal": "0.5"
+    }
+  },
+  {
+    "stt": 20,
+    "image_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_20.png",
+    "rotated_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_20_rot.png",
+    "is_vertical": true,
+    "coordinates": "X=2160, Y=552, W=41, H=90",
+    "ground_truth": {
+      "full_callout": "0.3 ±0.1",
+      "nominal": "0.3"
+    }
+  },
+  {
+    "stt": 21,
+    "image_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_21.png",
+    "rotated_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_21_rot.png",
+    "is_vertical": true,
+    "coordinates": "X=2050, Y=606, W=48, H=83",
+    "ground_truth": {
+      "full_callout": "35.7 ±0.1",
+      "nominal": "35.7"
+    }
+  },
+  {
+    "stt": 22,
+    "image_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_22.png",
+    "rotated_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_22_rot.png",
+    "is_vertical": true,
+    "coordinates": "X=1976, Y=598, W=54, H=96",
+    "ground_truth": {
+      "full_callout": "38.7 ±0.1",
+      "nominal": "38.7"
+    }
+  },
+  {
+    "stt": 23,
+    "image_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_23.png",
+    "rotated_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_23_rot.png",
+    "is_vertical": true,
+    "coordinates": "X=1922, Y=539, W=64, H=160",
+    "ground_truth": {
+      "full_callout": "39.4 ±0.01",
+      "nominal": "39.4"
+    }
+  },
+  {
+    "stt": 24,
+    "image_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_24.png",
+    "rotated_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_24_rot.png",
+    "is_vertical": true,
+    "coordinates": "X=1527, Y=519, W=56, H=204",
+    "ground_truth": {
+      "full_callout": "57.63 ±0.05",
+      "nominal": "57.63"
+    }
+  },
+  {
+    "stt": 25,
+    "image_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_25.png",
+    "rotated_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_25_rot.png",
+    "is_vertical": true,
+    "coordinates": "X=1660, Y=534, W=53, H=105",
+    "ground_truth": {
+      "full_callout": "52 ±0.01",
+      "nominal": "52"
+    }
+  },
+  {
+    "stt": 26,
+    "image_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_26.png",
+    "rotated_file": null,
+    "is_vertical": false,
+    "coordinates": "X=1371, Y=773, W=199, H=42",
+    "ground_truth": {
+      "full_callout": "4°30'23\"",
+      "nominal": "4°30'23\""
+    }
+  },
+  {
+    "stt": 27,
+    "image_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_27.png",
+    "rotated_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_27_rot.png",
+    "is_vertical": true,
+    "coordinates": "X=2242, Y=980, W=32, H=152",
+    "ground_truth": {
+      "full_callout": "1.13 +0.02/0",
+      "nominal": "1.13"
+    }
+  },
+  {
+    "stt": 28,
+    "image_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_28.png",
+    "rotated_file": null,
+    "is_vertical": false,
+    "coordinates": "X=1885, Y=1149, W=184, H=55",
+    "ground_truth": {
+      "full_callout": "4.04 0/-0.02",
+      "nominal": "4.04"
+    }
+  },
+  {
+    "stt": 29,
+    "image_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_29.png",
+    "rotated_file": null,
+    "is_vertical": false,
+    "coordinates": "X=1219, Y=898, W=228, H=48",
+    "ground_truth": {
+      "full_callout": "0°10'36\"",
+      "nominal": "0°10'36\""
+    }
+  },
+  {
+    "stt": 30,
+    "image_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_30.png",
+    "rotated_file": null,
+    "is_vertical": false,
+    "coordinates": "X=987, Y=674, W=184, H=45",
+    "ground_truth": {
+      "full_callout": "4.94 -0.003/-0.008",
+      "nominal": "4.94"
+    }
+  },
+  {
+    "stt": 31,
+    "image_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_31.png",
+    "rotated_file": null,
+    "is_vertical": false,
+    "coordinates": "X=697, Y=906, W=218, H=47",
+    "ground_truth": {
+      "full_callout": "0°10'36\"",
+      "nominal": 0.1767
+    }
+  },
+  {
+    "stt": 32,
+    "image_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_32.png",
+    "rotated_file": null,
+    "is_vertical": false,
+    "coordinates": "X=711, Y=1040, W=204, H=64",
+    "ground_truth": {
+      "full_callout": "5.04 -0.003/-0.008",
+      "nominal": 5.04
+    }
+  },
+  {
+    "stt": 33,
+    "image_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_33.png",
+    "rotated_file": null,
+    "is_vertical": false,
+    "coordinates": "X=1235, Y=1120, W=184, H=48",
+    "ground_truth": {
+      "full_callout": "41.42 0/-0.01",
+      "nominal": 41.42
+    }
+  },
+  {
+    "stt": 34,
+    "image_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_34.png",
+    "rotated_file": null,
+    "is_vertical": false,
+    "coordinates": "X=1238, Y=1178, W=160, H=45",
+    "ground_truth": {
+      "full_callout": "39.4 ±0.01",
+      "nominal": "39.4"
+    }
+  },
+  {
+    "stt": 35,
+    "image_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_35.png",
+    "rotated_file": null,
+    "is_vertical": false,
+    "coordinates": "X=1235, Y=1226, W=100, H=43",
+    "ground_truth": {
+      "full_callout": "38.7 ±0.1",
+      "nominal": "38.7"
+    }
+  },
+  {
+    "stt": 36,
+    "image_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_36.png",
+    "rotated_file": null,
+    "is_vertical": false,
+    "coordinates": "X=1236, Y=1292, W=101, H=51",
+    "ground_truth": {
+      "full_callout": "35.7 ±0.1",
+      "nominal": "35.7"
+    }
+  },
+  {
+    "stt": 37,
+    "image_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_37.png",
+    "rotated_file": null,
+    "is_vertical": false,
+    "coordinates": "X=1208, Y=1393, W=71, H=47",
+    "ground_truth": {
+      "full_callout": "0.3 ±0.1",
+      "nominal": "0.3"
+    }
+  },
+  {
+    "stt": 38,
+    "image_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_38.png",
+    "rotated_file": null,
+    "is_vertical": false,
+    "coordinates": "X=568, Y=1288, W=33, H=35",
+    "ground_truth": {
+      "full_callout": "3 ±0.2",
+      "nominal": "3"
+    }
+  },
+  {
+    "stt": 39,
+    "image_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_39.png",
+    "rotated_file": null,
+    "is_vertical": false,
+    "coordinates": "X=690, Y=1406, W=185, H=49",
+    "ground_truth": {
+      "full_callout": "0.008 ±0.001",
+      "nominal": 0.008
+    }
+  },
+  {
+    "stt": 40,
+    "image_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_40.png",
+    "rotated_file": null,
+    "is_vertical": false,
+    "coordinates": "X=2268, Y=1376, W=131, H=41",
+    "ground_truth": {
+      "full_callout": "57.63 ±0.05",
+      "nominal": "57.63"
+    }
+  },
+  {
+    "stt": 41,
+    "image_file": "C:/Users/tho/.gemini/antigravity/brain/24b427f8-3b51-40f9-8641-7b8bb7e1f5d9/crops_display/crop_stt_41.png",
+    "rotated_file": null,
+    "is_vertical": false,
+    "coordinates": "X=2248, Y=1430, W=209, H=56",
+    "ground_truth": {
+      "full_callout": "57.51 ±0.005",
+      "nominal": "57.51"
+    }
+  }
+]
