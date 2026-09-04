@@ -113,6 +113,72 @@ class AdaptiveLearner:
                             "full_callout": callout,
                             "source": f"adaptive_rule:{rule.get('name', 'custom')}"
                         }
+                    elif rule_type == "split_tokens":
+                        # Xu ly cac cum so wildcard bat ky (vi du: 5 0 5 -0.02, 10 0 2 -0.05, 3 +0.02 1 1 0)
+                        groups = [g for g in m.groups() if g is not None]
+                        # Tim token chua dung sai co dau (+ hoac -)
+                        tols = [g for g in groups if g.startswith('+') or g.startswith('-')]
+                        nums_clean = [g for g in groups if not g.startswith('+') and not g.startswith('-')]
+                        
+                        nom_str = ""
+                        nom_val = None
+                        u_tol = "0"
+                        l_tol = "0"
+
+                        # Truong hop dac trung 4.04 bi OCR tach roi: "4 0 4" -> 4.04 (hoac "5 0 5" -> 5.05)
+                        if len(nums_clean) == 3 and nums_clean[1] == '0':
+                            nom_str = f"{nums_clean[0]}.0{nums_clean[2]}"
+                            try:
+                                nom_val = float(nom_str)
+                            except ValueError:
+                                nom_val = None
+                        elif len(nums_clean) >= 1:
+                            # Chon so lon nhat hoac ghep hop ly
+                            candidates = []
+                            for c in nums_clean:
+                                try:
+                                    candidates.append((float(c), c))
+                                except ValueError:
+                                    pass
+                            if candidates:
+                                candidates.sort(key=lambda x: x[0], reverse=True)
+                                nom_val, nom_str = candidates[0]
+
+                        # Dung sai
+                        if tols:
+                            for t in tols:
+                                if t.startswith('+'):
+                                    u_tol = t
+                                elif t.startswith('-'):
+                                    l_tol = t
+                        else:
+                            tmpl = rule.get("template", {})
+                            u_tol = tmpl.get("default_upper", "0")
+                            l_tol = tmpl.get("default_lower", "0")
+
+                        if nom_val is not None:
+                            callout_parts = [nom_str]
+                            if u_tol or l_tol:
+                                if u_tol == (l_tol or '').replace('-', '+'):
+                                    callout_parts.append(f"±{u_tol.replace('+', '')}")
+                                else:
+                                    callout_parts.append(f"{u_tol or '0'}/{l_tol or '0'}")
+                            callout = " ".join(callout_parts)
+
+                            return {
+                                "success": True,
+                                "raw_text": raw_text,
+                                "qty": "",
+                                "prefix": "",
+                                "nominal": nom_val,
+                                "nominal_str": nom_str,
+                                "upper_tol": u_tol,
+                                "lower_tol": l_tol,
+                                "tol_type": "adaptive_wildcard",
+                                "suffix": "",
+                                "full_callout": callout,
+                                "source": f"adaptive_rule:{rule.get('name', 'custom')}"
+                            }
             except Exception as e:
                 print(f"Error executing adaptive rule {rule.get('id')}: {e}")
 
@@ -146,7 +212,8 @@ class AdaptiveLearner:
         }
         self.exact_matches[clean_raw] = learned_entry
 
-        # Rule generalization neu la dang goc do hoac mau dac biet
+        # 2. Rule Generalization (Khái quát hóa quy tắc dạng Wildcard / Pattern chung)
+        # Thay vì chỉ nhớ số cứng 4.04 (máy móc), tự động sinh quy tắc tổng quát cho các số khác (ví dụ: 5.05, 10.2, v.v.)
         new_rule_created = False
         if "°" in clean_raw or "'" in clean_raw or '"' in clean_raw:
             has_angle_rule = any(r.get("id") == "rule_dms_angle" for r in self.generalized_rules)
@@ -159,11 +226,56 @@ class AdaptiveLearner:
                     "user_defined": True
                 })
                 new_rule_created = True
+        else:
+            # Tự động trích xuất Wildcard Pattern:
+            # Ví dụ: "4\n0\n4\n-0.02" hoặc "4 0 4 -0.02" bị OCR cắt rời số -> Khái quát hóa dạng (\d+)\s+0\s+(\d+)\s+([+-]\d+(?:\.\d+)?)
+            # Hoặc dung sai đứng trước: "3 +0.02 1 1 0" -> Tự động nhận diện cấu trúc Wildcard
+            lines_raw = [line.strip() for line in clean_raw.split() if line.strip()]
+            num_tokens = len(lines_raw)
+            nom_str = str(corrected.get("nominal_str", "") or corrected.get("nominal", ""))
+            u_tol = corrected.get("upper_tol", "")
+            l_tol = corrected.get("lower_tol", "")
+
+            # Neu OCR bi tach roi thanh 3 hoac 4 tokens so
+            if num_tokens >= 3:
+                # Tao regex pattern tong quat
+                token_patterns = []
+                for tok in lines_raw:
+                    if re.match(r'^[+-]?[0-9]+(?:\.[0-9]+)?$', tok):
+                        if tok.startswith('+') or tok.startswith('-'):
+                            token_patterns.append(r'([+-][0-9]+(?:\.[0-9]+)?)')
+                        else:
+                            token_patterns.append(r'([0-9]+(?:\.[0-9]+)?)')
+                    else:
+                        token_patterns.append(re.escape(tok))
+
+                # Regex pattern linh hoat giua cac token co the la khoang trang hoac xuong dong
+                gen_regex = r'^\s*' + r'[\s\n]+'.join(token_patterns) + r'\s*$'
+                rule_name = f"Pattern tách số: {' '.join(token_patterns)}"
+
+                # Kiem tra xem rule tuong tu da ton tai chua
+                if not any(r.get("pattern") == gen_regex for r in self.generalized_rules):
+                    rule_id = f"rule_gen_{abs(hash(gen_regex)) % 100000}"
+                    self.generalized_rules.append({
+                        "id": rule_id,
+                        "name": f"Nhận diện tách rời {num_tokens} cụm số (** Wildcard)",
+                        "pattern": gen_regex,
+                        "type": "split_tokens",
+                        "token_count": num_tokens,
+                        "template": {
+                            "has_upper": bool(u_tol and u_tol != '0'),
+                            "has_lower": bool(l_tol and l_tol != '0'),
+                            "default_upper": u_tol,
+                            "default_lower": l_tol
+                        },
+                        "user_defined": True
+                    })
+                    new_rule_created = True
 
         self.save_rules_to_disk()
         return {
             "success": True,
-            "learned_type": "exact_and_rule" if new_rule_created else "exact",
+            "learned_type": "generalized_wildcard" if new_rule_created else "exact",
             "entry": learned_entry
         }
 
