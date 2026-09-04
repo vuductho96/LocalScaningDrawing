@@ -179,21 +179,26 @@ class PDFProcessor:
                 parsed_from_page["source"] = "page_ocr_aligned"
                 parsed_from_page["box"] = {"x": x, "y": y, "w": w, "h": h}
 
-        # Buoc 3: Chay RapidOCR truc tiep tren vung crop (phong to de bat chi tiet cuc nho)
+        # Buoc 3: Chay RapidOCR truc tiep tren vung crop (toi uu chat luong anh nhe nhang)
         ocr_text = ""
         ocr_lines = []
         if rapid_engine is not None and crop_cv.size > 0:
+            # 1. Them vien trang mong (Padding) 8px giup OCR khong bi dinh sat bien cat
+            padded_crop = cv2.copyMakeBorder(crop_cv, 8, 8, 8, 8, cv2.BORDER_CONSTANT, value=[255, 255, 255])
+            
+            # 2. Scale toi uu (Sweet-spot: 1.3x - 1.5x):
+            # Scale qua lon (2.0x+) se lam lo khoang trang giua so "4.0 4"
+            # Scale qua nho (1.0x) so 0 co the bi nham thanh O
+            # 1.3x - 1.5x la ti le hoan hao giu nguyen khoang cach chu va lam net
             min_dim = min(w, h)
-            scale = 1.0
-            if min_dim < 60:
-                scale = 3.0
-            elif min_dim < 120:
-                scale = 2.0
-
-            if scale > 1.0:
-                proc_img = cv2.resize(crop_cv, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+            if min_dim < 40:
+                scale = 1.8
+            elif min_dim < 80:
+                scale = 1.4
             else:
-                proc_img = crop_cv
+                scale = 1.25
+
+            proc_img = cv2.resize(padded_crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_LANCZOS4)
 
             try:
                 ocr_result, _ = rapid_engine(proc_img)

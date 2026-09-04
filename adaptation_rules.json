@@ -1,20 +1,7 @@
 {
   "exact_matches": {
-    "4.0 4 -8.02 special_font": {
-      "raw_text": "4.0 4 -8.02 special_font",
-      "qty": "",
-      "prefix": "",
-      "nominal": 4.04,
-      "nominal_str": "4.04",
-      "upper_tol": "0",
-      "lower_tol": "-0.02",
-      "tol_type": "user_defined",
-      "suffix": "",
-      "full_callout": "4.04 0/-0.02",
-      "user_verified": true
-    },
-    "4\n0\n4\n-0.02": {
-      "raw_text": "4\n0\n4\n-0.02",
+    ".0\n4\n4\n0\n-0.02": {
+      "raw_text": ".0\n4\n4\n0\n-0.02",
       "qty": "",
       "prefix": "",
       "nominal": 4,
@@ -23,20 +10,7 @@
       "lower_tol": "-0.02",
       "tol_type": "user_defined",
       "suffix": "",
-      "full_callout": "4.04/-0.02",
-      "user_verified": true
-    },
-    "4 0 4 -0.02": {
-      "raw_text": "4 0 4 -0.02",
-      "qty": "",
-      "prefix": "",
-      "nominal": 4.04,
-      "nominal_str": "4.04",
-      "upper_tol": "0",
-      "lower_tol": "-0.02",
-      "tol_type": "user_defined",
-      "suffix": "",
-      "full_callout": "4.04 0/-0.02",
+      "full_callout": "4.04-0.02",
       "user_verified": true
     }
   },
@@ -54,6 +28,20 @@
       "pattern": "^\\s*([0-9]+(?:\\.[0-9]+)?)[\\s\\n]+([0-9]+(?:\\.[0-9]+)?)[\\s\\n]+([0-9]+(?:\\.[0-9]+)?)[\\s\\n]+([+-][0-9]+(?:\\.[0-9]+)?)\\s*$",
       "type": "split_tokens",
       "token_count": 4,
+      "template": {
+        "has_upper": false,
+        "has_lower": true,
+        "default_upper": "0",
+        "default_lower": "-0.02"
+      },
+      "user_defined": true
+    },
+    {
+      "id": "rule_gen_57048",
+      "name": "Nhận diện tách rời 5 cụm số (** Wildcard)",
+      "pattern": "^\\s*\\.0[\\s\\n]+([0-9]+(?:\\.[0-9]+)?)[\\s\\n]+([0-9]+(?:\\.[0-9]+)?)[\\s\\n]+([0-9]+(?:\\.[0-9]+)?)[\\s\\n]+([+-][0-9]+(?:\\.[0-9]+)?)\\s*$",
+      "type": "split_tokens",
+      "token_count": 5,
       "template": {
         "has_upper": false,
         "has_lower": true,
