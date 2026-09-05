@@ -38,7 +38,18 @@ document.addEventListener('DOMContentLoaded', () => {
             mode: 'decimals',
             fixed_value: 0.1,
             decimals: { 0: 0.2, 1: 0.1, 2: 0.05, 3: 0.01, 4: 0.005, 5: 0.001 }
-        }
+        },
+
+        // Blue Box Selection & Editing (Drag/Move & Resize)
+        selectedRowId: null,
+        hoveredHandle: null,
+        isDraggingBox: false,
+        isResizingBox: false,
+        activeHandle: null,
+        dragStartX: 0,
+        dragStartY: 0,
+        boxStart: null,
+        hasBoxChanged: false
     };
 
     // DOM Elements
@@ -51,6 +62,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const resultsTableBody = document.getElementById('resultsTableBody');
     const tableEmptyState = document.getElementById('tableEmptyState');
     const itemCountBadge = document.getElementById('itemCountBadge');
+    const tableScrollContainer = document.getElementById('tableScrollContainer');
+    const scrollToBottomBtn = document.getElementById('scrollToBottomBtn');
     
     const docName = document.getElementById('docName');
     const pageNavContainer = document.getElementById('pageNavContainer');
@@ -92,8 +105,35 @@ document.addEventListener('DOMContentLoaded', () => {
     const closeAdaptiveBtn2 = document.getElementById('closeAdaptiveBtn2');
     const adaptiveCountBadge = document.getElementById('adaptiveCountBadge');
     const exactRulesList = document.getElementById('exactRulesList');
-    const genRulesList = document.getElementById('genRulesList');
     const toastContainer = document.getElementById('toastContainer');
+
+    // AI Vision Elements
+    const openAiVisionBtn = document.getElementById('openAiVisionBtn');
+    const aiVisionStatusBadge = document.getElementById('aiVisionStatusBadge');
+    const aiVisionModal = document.getElementById('aiVisionModal');
+    const closeAiVisionBtn = document.getElementById('closeAiVisionBtn');
+    const cancelAiVisionBtn = document.getElementById('cancelAiVisionBtn');
+    const saveAiVisionBtn = document.getElementById('saveAiVisionBtn');
+    const aiApiKeyInput = document.getElementById('aiApiKeyInput');
+    const aiModelSelect = document.getElementById('aiModelSelect');
+    const testAiKeyBtn = document.getElementById('testAiKeyBtn');
+    const clearAiKeyBtn = document.getElementById('clearAiKeyBtn');
+    const aiStatusDot = document.getElementById('aiStatusDot');
+    const aiStatusDetail = document.getElementById('aiStatusDetail');
+    const toggleAiKeyVisBtn = document.getElementById('toggleAiKeyVisBtn');
+    const aiAutoScanBtn = document.getElementById('aiAutoScanBtn');
+
+    // AI Usage Progress Bar Elements
+    const aiUsageContainer = document.getElementById('aiUsageContainer');
+    const aiUsagePercentText = document.getElementById('aiUsagePercentText');
+    const aiUsageProgressBar = document.getElementById('aiUsageProgressBar');
+    const aiUsageReqText = document.getElementById('aiUsageReqText');
+    const aiModalPercentBadge = document.getElementById('aiModalPercentBadge');
+    const aiModalRpdText = document.getElementById('aiModalRpdText');
+    const aiModalRpdBar = document.getElementById('aiModalRpdBar');
+    const aiModalRpmText = document.getElementById('aiModalRpmText');
+    const aiModalRpmBar = document.getElementById('aiModalRpmBar');
+    const aiModalTokensText = document.getElementById('aiModalTokensText');
 
     // Toast Notification helper
     function showToast(message, type = 'success') {
@@ -141,31 +181,111 @@ document.addEventListener('DOMContentLoaded', () => {
         // 1. Ve anh ban ve
         ctx.drawImage(state.image, 0, 0, state.pageWidth, state.pageHeight);
 
+        // Helper: Tinh toa do 8 resize handles cua mot bounding box
+        function getBoxHandles(box) {
+            const { x, y, w, h } = box;
+            const midX = x + w / 2;
+            const midY = y + h / 2;
+            return {
+                nw: { x: x, y: y, cursor: 'nwse-resize' },
+                n:  { x: midX, y: y, cursor: 'ns-resize' },
+                ne: { x: x + w, y: y, cursor: 'nesw-resize' },
+                e:  { x: x + w, y: midY, cursor: 'ew-resize' },
+                se: { x: x + w, y: y + h, cursor: 'nwse-resize' },
+                s:  { x: midX, y: y + h, cursor: 'ns-resize' },
+                sw: { x: x, y: y + h, cursor: 'nesw-resize' },
+                w:  { x: x, y: midY, cursor: 'ew-resize' }
+            };
+        }
+
+        // Helper: Kiem tra mot diem co nam trong box hay khong
+        function isPointInBox(pt, box) {
+            return pt.x >= box.x && pt.x <= box.x + box.w &&
+                   pt.y >= box.y && pt.y <= box.y + box.h;
+        }
+
+        // Helper: Kiem tra chuot co dang cham vao mot resize handle nao khong
+        function getHitHandle(pt, box) {
+            const handles = getBoxHandles(box);
+            const hitRadius = 8 / state.scale; // ban kinh bat chuot theo ti le zoom
+            for (const [key, pos] of Object.entries(handles)) {
+                if (Math.abs(pt.x - pos.x) <= hitRadius && Math.abs(pt.y - pos.y) <= hitRadius) {
+                    return { name: key, cursor: pos.cursor };
+                }
+            }
+            return null;
+        }
+
         // 2. Ve cac o da crop truoc do (highlight overlay kem toa do X, Y)
         state.rows.forEach(r => {
             if (r.page === state.currentPage && r.raw_box) {
-                ctx.fillStyle = 'rgba(59, 130, 246, 0.15)';
-                ctx.strokeStyle = '#3b82f6';
-                ctx.lineWidth = 2 / state.scale;
-                ctx.fillRect(r.raw_box.x, r.raw_box.y, r.raw_box.w, r.raw_box.h);
-                ctx.strokeRect(r.raw_box.x, r.raw_box.y, r.raw_box.w, r.raw_box.h);
+                const isSelected = (r.id === state.selectedRowId);
+                const box = r.raw_box;
 
-                // Ve nhan so thu tu va toa do X, Y
-                const labelText = `#${r.id} (${Math.round(r.raw_box.x)}, ${Math.round(r.raw_box.y)})`;
-                ctx.font = `bold ${Math.max(10, 11 / state.scale)}px monospace`;
-                const pad = 4 / state.scale;
-                const textWidth = ctx.measureText(labelText).width;
+                if (isSelected) {
+                    // Box dang duoc chon de chinh sua (keo tha / resize)
+                    ctx.fillStyle = 'rgba(6, 182, 212, 0.22)';
+                    ctx.strokeStyle = '#06b6d4';
+                    ctx.lineWidth = 2.5 / state.scale;
+                    ctx.fillRect(box.x, box.y, box.w, box.h);
+                    ctx.strokeRect(box.x, box.y, box.w, box.h);
 
-                ctx.fillStyle = '#1e3a8a';
-                ctx.fillRect(r.raw_box.x, r.raw_box.y - 18 / state.scale, textWidth + pad * 2, 18 / state.scale);
-                ctx.strokeStyle = '#3b82f6';
-                ctx.strokeRect(r.raw_box.x, r.raw_box.y - 18 / state.scale, textWidth + pad * 2, 18 / state.scale);
-                ctx.fillStyle = '#67e8f9';
-                ctx.fillText(labelText, r.raw_box.x + pad, r.raw_box.y - 5 / state.scale);
+                    // Vien net dut tao hieu ung active
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = 1 / state.scale;
+                    ctx.setLineDash([4 / state.scale, 3 / state.scale]);
+                    ctx.strokeRect(box.x, box.y, box.w, box.h);
+                    ctx.setLineDash([]);
+
+                    // Ve 8 resize handles
+                    const handleSize = 8 / state.scale;
+                    const handles = getBoxHandles(box);
+                    for (const [key, pos] of Object.entries(handles)) {
+                        ctx.fillStyle = (state.hoveredHandle === key) ? '#22d3ee' : '#ffffff';
+                        ctx.strokeStyle = '#0891b2';
+                        ctx.lineWidth = 1.5 / state.scale;
+                        ctx.fillRect(pos.x - handleSize / 2, pos.y - handleSize / 2, handleSize, handleSize);
+                        ctx.strokeRect(pos.x - handleSize / 2, pos.y - handleSize / 2, handleSize, handleSize);
+                    }
+
+                    // Nhan active hien thi dang chinh sua
+                    const labelText = `✏️ #${r.id} (${Math.round(box.x)}, ${Math.round(box.y)}) [${Math.round(box.w)}x${Math.round(box.h)}]`;
+                    ctx.font = `bold ${Math.max(10, 11 / state.scale)}px monospace`;
+                    const pad = 4 / state.scale;
+                    const textWidth = ctx.measureText(labelText).width;
+
+                    ctx.fillStyle = '#0e7490';
+                    ctx.fillRect(box.x, box.y - 20 / state.scale, textWidth + pad * 2, 19 / state.scale);
+                    ctx.strokeStyle = '#22d3ee';
+                    ctx.strokeRect(box.x, box.y - 20 / state.scale, textWidth + pad * 2, 19 / state.scale);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillText(labelText, box.x + pad, box.y - 6 / state.scale);
+
+                } else {
+                    // Box thuong (chua chon)
+                    ctx.fillStyle = 'rgba(59, 130, 246, 0.15)';
+                    ctx.strokeStyle = '#3b82f6';
+                    ctx.lineWidth = 2 / state.scale;
+                    ctx.fillRect(box.x, box.y, box.w, box.h);
+                    ctx.strokeRect(box.x, box.y, box.w, box.h);
+
+                    // Ve nhan so thu tu va toa do X, Y
+                    const labelText = `#${r.id} (${Math.round(box.x)}, ${Math.round(box.y)})`;
+                    ctx.font = `bold ${Math.max(10, 11 / state.scale)}px monospace`;
+                    const pad = 4 / state.scale;
+                    const textWidth = ctx.measureText(labelText).width;
+
+                    ctx.fillStyle = '#1e3a8a';
+                    ctx.fillRect(box.x, box.y - 18 / state.scale, textWidth + pad * 2, 18 / state.scale);
+                    ctx.strokeStyle = '#3b82f6';
+                    ctx.strokeRect(box.x, box.y - 18 / state.scale, textWidth + pad * 2, 18 / state.scale);
+                    ctx.fillStyle = '#67e8f9';
+                    ctx.fillText(labelText, box.x + pad, box.y - 5 / state.scale);
+                }
             }
         });
 
-        // 3. Ve o crop dang keo (Active selection box kem toa do Live)
+        // 3. Ve o crop dang keo moi (Active selection box kem toa do Live)
         if (state.isLeftDown) {
             const x = Math.min(state.startX, state.currentX);
             const y = Math.min(state.startY, state.currentY);
@@ -192,6 +312,39 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         ctx.restore();
+    }
+
+    // Helper functions exported to window/scope
+    function getBoxHandles(box) {
+        const { x, y, w, h } = box;
+        const midX = x + w / 2;
+        const midY = y + h / 2;
+        return {
+            nw: { x: x, y: y, cursor: 'nwse-resize' },
+            n:  { x: midX, y: y, cursor: 'ns-resize' },
+            ne: { x: x + w, y: y, cursor: 'nesw-resize' },
+            e:  { x: x + w, y: midY, cursor: 'ew-resize' },
+            se: { x: x + w, y: y + h, cursor: 'nwse-resize' },
+            s:  { x: midX, y: y + h, cursor: 'ns-resize' },
+            sw: { x: x, y: y + h, cursor: 'nesw-resize' },
+            w:  { x: x, y: midY, cursor: 'ew-resize' }
+        };
+    }
+
+    function isPointInBox(pt, box) {
+        return pt.x >= box.x && pt.x <= box.x + box.w &&
+               pt.y >= box.y && pt.y <= box.y + box.h;
+    }
+
+    function getHitHandle(pt, box) {
+        const handles = getBoxHandles(box);
+        const hitRadius = 8 / state.scale;
+        for (const [key, pos] of Object.entries(handles)) {
+            if (Math.abs(pt.x - pos.x) <= hitRadius && Math.abs(pt.y - pos.y) <= hitRadius) {
+                return { name: key, cursor: pos.cursor };
+            }
+        }
+        return null;
     }
 
     // Convert Screen coordinates to Image coordinates
@@ -258,9 +411,52 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        if (e.key === 'Escape' && state.isPanModeActive) {
-            setPanMode(false);
-            return;
+        if (e.key === 'Escape') {
+            if (state.isPanModeActive) {
+                setPanMode(false);
+                return;
+            }
+            if (state.selectedRowId !== null) {
+                state.selectedRowId = null;
+                unhighlightTableRows();
+                render();
+                return;
+            }
+        }
+
+        // Delete hoặc Backspace để xóa box đang chọn
+        if ((e.key === 'Delete' || e.key === 'Backspace') && 
+            e.target.tagName !== 'INPUT' && !e.target.isContentEditable) {
+            if (state.selectedRowId !== null) {
+                const idx = state.rows.findIndex(r => r.id === state.selectedRowId);
+                if (idx !== -1) {
+                    state.rows.splice(idx, 1);
+                    state.selectedRowId = null;
+                    renderTable();
+                    render();
+                    showToast('Đã xóa vùng quét kích thước', 'adaptive');
+                    e.preventDefault();
+                    return;
+                }
+            }
+        }
+
+        // Phím mũi tên (Arrow keys) để di chuyển vi chỉnh (nudge) Box đang chọn
+        if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key) && 
+            e.target.tagName !== 'INPUT' && !e.target.isContentEditable) {
+            if (state.selectedRowId !== null) {
+                const selRow = state.rows.find(r => r.id === state.selectedRowId);
+                if (selRow && selRow.raw_box) {
+                    const step = e.shiftKey ? 10 : 2;
+                    if (e.key === 'ArrowLeft') selRow.raw_box.x = Math.max(0, selRow.raw_box.x - step);
+                    if (e.key === 'ArrowRight') selRow.raw_box.x = Math.min(state.pageWidth - selRow.raw_box.w, selRow.raw_box.x + step);
+                    if (e.key === 'ArrowUp') selRow.raw_box.y = Math.max(0, selRow.raw_box.y - step);
+                    if (e.key === 'ArrowDown') selRow.raw_box.y = Math.min(state.pageHeight - selRow.raw_box.h, selRow.raw_box.y + step);
+                    render();
+                    e.preventDefault();
+                    return;
+                }
+            }
         }
 
         if (e.key === 'Control' || e.ctrlKey) {
@@ -292,7 +488,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Canvas Mouse Events
+    // Canvas Mouse Events: Selection, Move, Resize handles, or New Crop
     viewport.addEventListener('mousedown', (e) => {
         if (!state.image) return;
         
@@ -306,9 +502,68 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Chuột trái (button 0) ở chế độ bình thường -> Kéo ô Crop selection
+        // Chuột trái (button 0)
         if (e.button === 0) {
             const pt = screenToImage(e.clientX, e.clientY);
+
+            // 1. Kiểm tra nếu đang có box được chọn và người dùng bấm trúng Resize Handle
+            if (state.selectedRowId !== null) {
+                const selRow = state.rows.find(r => r.id === state.selectedRowId && r.page === state.currentPage);
+                if (selRow && selRow.raw_box) {
+                    const hit = getHitHandle(pt, selRow.raw_box);
+                    if (hit) {
+                        state.isResizingBox = true;
+                        state.activeHandle = hit.name;
+                        state.dragStartX = pt.x;
+                        state.dragStartY = pt.y;
+                        state.boxStart = { ...selRow.raw_box };
+                        state.hasBoxChanged = false;
+                        viewport.style.cursor = hit.cursor;
+                        e.preventDefault();
+                        return;
+                    }
+                }
+            }
+
+            // 2. Kiểm tra nếu người dùng bấm vào bên trong một Box xanh đã có (ưu tiên box đang chọn trước)
+            let clickedRow = null;
+            if (state.selectedRowId !== null) {
+                const curSel = state.rows.find(r => r.id === state.selectedRowId && r.page === state.currentPage);
+                if (curSel && curSel.raw_box && isPointInBox(pt, curSel.raw_box)) {
+                    clickedRow = curSel;
+                }
+            }
+            // Nếu không trúng box đang chọn, tìm trong các box khác trên trang (duyệt từ mới nhất đến cũ nhất)
+            if (!clickedRow) {
+                for (let i = state.rows.length - 1; i >= 0; i--) {
+                    const r = state.rows[i];
+                    if (r.page === state.currentPage && r.raw_box && isPointInBox(pt, r.raw_box)) {
+                        clickedRow = r;
+                        break;
+                    }
+                }
+            }
+
+            if (clickedRow) {
+                // Chọn box và bắt đầu chế độ Kéo thả di chuyển (Drag/Move)
+                state.selectedRowId = clickedRow.id;
+                state.isDraggingBox = true;
+                state.dragStartX = pt.x;
+                state.dragStartY = pt.y;
+                state.boxStart = { ...clickedRow.raw_box };
+                state.hasBoxChanged = false;
+                viewport.style.cursor = 'move';
+                render();
+                highlightTableRow(clickedRow.id);
+                e.preventDefault();
+                return;
+            }
+
+            // 3. Nếu bấm vào vùng trống: Bỏ chọn box hiện tại và bắt đầu kéo vùng Crop mới
+            if (state.selectedRowId !== null) {
+                state.selectedRowId = null;
+                unhighlightTableRows();
+            }
             state.isLeftDown = true;
             state.startX = pt.x;
             state.startY = pt.y;
@@ -326,11 +581,124 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        const pt = screenToImage(e.clientX, e.clientY);
+
+        // A. Đang kéo di chuyển Box
+        if (state.isDraggingBox && state.selectedRowId !== null) {
+            const dx = pt.x - state.dragStartX;
+            const dy = pt.y - state.dragStartY;
+            const selRow = state.rows.find(r => r.id === state.selectedRowId);
+            if (selRow && selRow.raw_box && state.boxStart) {
+                const newX = Math.max(0, Math.min(state.pageWidth - state.boxStart.w, state.boxStart.x + dx));
+                const newY = Math.max(0, Math.min(state.pageHeight - state.boxStart.h, state.boxStart.y + dy));
+                if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
+                    state.hasBoxChanged = true;
+                }
+                selRow.raw_box.x = newX;
+                selRow.raw_box.y = newY;
+                render();
+            }
+            return;
+        }
+
+        // B. Đang kéo co giãn (Resize) Box bằng Handles
+        if (state.isResizingBox && state.selectedRowId !== null) {
+            const dx = pt.x - state.dragStartX;
+            const dy = pt.y - state.dragStartY;
+            const selRow = state.rows.find(r => r.id === state.selectedRowId);
+            if (selRow && selRow.raw_box && state.boxStart) {
+                const b = { ...state.boxStart };
+                const handle = state.activeHandle;
+
+                // Điều chỉnh theo handle tương ứng
+                if (handle.includes('e')) {
+                    b.w = Math.max(10, state.boxStart.w + dx);
+                }
+                if (handle.includes('s')) {
+                    b.h = Math.max(10, state.boxStart.h + dy);
+                }
+                if (handle.includes('w')) {
+                    const proposedW = state.boxStart.w - dx;
+                    if (proposedW >= 10) {
+                        b.x = state.boxStart.x + dx;
+                        b.w = proposedW;
+                    }
+                }
+                if (handle.includes('n')) {
+                    const proposedH = state.boxStart.h - dy;
+                    if (proposedH >= 10) {
+                        b.y = state.boxStart.y + dy;
+                        b.h = proposedH;
+                    }
+                }
+
+                // Giới hạn trong kích thước trang
+                b.x = Math.max(0, Math.min(state.pageWidth - b.w, b.x));
+                b.y = Math.max(0, Math.min(state.pageHeight - b.h, b.y));
+
+                if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
+                    state.hasBoxChanged = true;
+                }
+
+                selRow.raw_box = b;
+                render();
+            }
+            return;
+        }
+
+        // C. Đang kéo vẽ ô Crop mới
         if (state.isLeftDown) {
-            const pt = screenToImage(e.clientX, e.clientY);
             state.currentX = pt.x;
             state.currentY = pt.y;
             render();
+            return;
+        }
+
+        // D. Di chuột tự do (Hover) -> Cập nhật Cursor phù hợp
+        if (!state.isPanModeActive && !isCtrlPressed && !isSpacePressed) {
+            let cursorSet = false;
+
+            // 1. Hover trên resize handles của box đang chọn
+            if (state.selectedRowId !== null) {
+                const selRow = state.rows.find(r => r.id === state.selectedRowId && r.page === state.currentPage);
+                if (selRow && selRow.raw_box) {
+                    const hit = getHitHandle(pt, selRow.raw_box);
+                    if (hit) {
+                        viewport.style.cursor = hit.cursor;
+                        if (state.hoveredHandle !== hit.name) {
+                            state.hoveredHandle = hit.name;
+                            render();
+                        }
+                        cursorSet = true;
+                    } else if (state.hoveredHandle !== null) {
+                        state.hoveredHandle = null;
+                        render();
+                    }
+                }
+            }
+
+            // 2. Hover trên thân box (đang chọn -> move, chưa chọn -> pointer)
+            if (!cursorSet) {
+                let hoveredOnBox = false;
+                for (let i = state.rows.length - 1; i >= 0; i--) {
+                    const r = state.rows[i];
+                    if (r.page === state.currentPage && r.raw_box && isPointInBox(pt, r.raw_box)) {
+                        hoveredOnBox = true;
+                        if (r.id === state.selectedRowId) {
+                            viewport.style.cursor = 'move';
+                        } else {
+                            viewport.style.cursor = 'pointer';
+                        }
+                        cursorSet = true;
+                        break;
+                    }
+                }
+            }
+
+            // 3. Hover trên nền trống -> crosshair
+            if (!cursorSet) {
+                viewport.style.cursor = 'crosshair';
+            }
         }
     });
 
@@ -341,6 +709,54 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        // 1. Kết thúc kéo di chuyển Box (Move)
+        if (state.isDraggingBox) {
+            state.isDraggingBox = false;
+            viewport.style.cursor = 'move';
+            if (state.hasBoxChanged && state.selectedRowId !== null) {
+                const selRow = state.rows.find(r => r.id === state.selectedRowId);
+                if (selRow && selRow.raw_box) {
+                    showToast(`🔄 Đang quét lại OCR theo vị trí mới của #${selRow.id}...`, 'adaptive');
+                    await processCrop(
+                        selRow.raw_box.x,
+                        selRow.raw_box.y,
+                        selRow.raw_box.w,
+                        selRow.raw_box.h,
+                        selRow.crop_rotation || 0,
+                        selRow.id
+                    );
+                }
+            }
+            state.hasBoxChanged = false;
+            state.boxStart = null;
+            return;
+        }
+
+        // 2. Kết thúc co giãn Box (Resize)
+        if (state.isResizingBox) {
+            state.isResizingBox = false;
+            state.activeHandle = null;
+            viewport.style.cursor = 'crosshair';
+            if (state.hasBoxChanged && state.selectedRowId !== null) {
+                const selRow = state.rows.find(r => r.id === state.selectedRowId);
+                if (selRow && selRow.raw_box) {
+                    showToast(`🔄 Đang quét lại OCR theo kích thước mới của #${selRow.id}...`, 'adaptive');
+                    await processCrop(
+                        selRow.raw_box.x,
+                        selRow.raw_box.y,
+                        selRow.raw_box.w,
+                        selRow.raw_box.h,
+                        selRow.crop_rotation || 0,
+                        selRow.id
+                    );
+                }
+            }
+            state.hasBoxChanged = false;
+            state.boxStart = null;
+            return;
+        }
+
+        // 3. Kết thúc vẽ Crop mới
         if (state.isLeftDown && e.button === 0) {
             state.isLeftDown = false;
             const pt = screenToImage(e.clientX, e.clientY);
@@ -626,9 +1042,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (cropRot !== 0) {
                     showToast(`Đã quét kích thước với góc xoay ${cropRot}°`, 'success');
                 }
+                renderTable(true, state.rows.length - 1);
             }
 
-            renderTable();
             render(); // Ve them o crop overlay
 
         } catch (err) {
@@ -639,7 +1055,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Render Table Body
-    function renderTable() {
+    function renderTable(autoScroll = false, highlightIdx = null) {
         resultsTableBody.innerHTML = '';
         itemCountBadge.textContent = `${state.rows.length} mục`;
 
@@ -652,39 +1068,26 @@ document.addEventListener('DOMContentLoaded', () => {
         state.rows.forEach((row, idx) => {
             const tr = document.createElement('tr');
             tr.className = 'hover:bg-slate-800/50 transition group border-b border-slate-800/40';
+            if (highlightIdx === idx) {
+                tr.classList.add('bg-blue-600/25', 'transition-colors', 'duration-700');
+                setTimeout(() => {
+                    tr.classList.remove('bg-blue-600/25');
+                }, 2500);
+            }
 
-            const isGlobal = row.tol_type === 'global';
             const isLearned = row.source && row.source.startsWith('adaptive');
             const isUserCorrected = row.user_corrected;
-
-            let badgeClass = 'bg-blue-900/50 text-blue-300 border-blue-700/60';
-            let badgeText = 'Local';
-            if (isLearned || isUserCorrected) {
-                badgeClass = 'bg-amber-900/60 text-amber-300 border-amber-600/70 shadow-sm';
-                badgeText = 'AI Đã học';
-            } else if (row.tol_type === 'angle') {
-                badgeClass = 'bg-purple-900/50 text-purple-300 border-purple-700/60';
-                badgeText = 'Góc độ';
-            } else if (isGlobal) {
-                badgeClass = 'bg-emerald-900/50 text-emerald-300 border-emerald-700/60';
-                badgeText = 'Global';
-            }
 
             const safeThumb = (row.thumbnail && row.thumbnail !== 'undefined') 
                 ? row.thumbnail 
                 : 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="48" height="28" fill="%23334155"><rect width="48" height="28" fill="%231e293b"/><text x="24" y="17" fill="%2364748b" font-size="9" text-anchor="middle" font-family="sans-serif">Crop</text></svg>';
 
             const box = row.box || row.raw_box || { x: 0, y: 0, w: 0, h: 0 };
-            const coordStr = `X:${Math.round(box.x)} Y:${Math.round(box.y)}`;
-            const coordTooltip = `Tọa độ Crop:\nX=${Math.round(box.x)}, Y=${Math.round(box.y)}, W=${Math.round(box.w)}, H=${Math.round(box.h)}\nTrang: ${row.page !== undefined ? row.page + 1 : 1}\nNhấp để sao chép tọa độ JSON cho AI/Debug`;
 
             tr.innerHTML = `
                 <td class="py-2 px-2 text-center text-slate-500 font-mono text-[11px]">${idx + 1}</td>
                 <td class="py-2 px-2 text-center">
-                    <img src="${safeThumb}" class="w-12 h-7 object-contain bg-white rounded border border-slate-700 cursor-pointer hover:scale-125 transition origin-left shadow mx-auto" data-img="${safeThumb}">
-                    <button class="copy-coords-btn text-[9px] font-mono text-cyan-400/90 bg-slate-900/90 px-1 py-0.5 rounded mt-1 border border-slate-700/80 hover:border-cyan-400 hover:text-cyan-200 hover:bg-slate-800 transition block mx-auto text-center cursor-pointer shadow-sm" title="${coordTooltip}">
-                        <i class="fa-solid fa-crosshairs text-[8px] text-cyan-500 mr-0.5"></i>${coordStr}
-                    </button>
+                    <img src="${safeThumb}" class="w-12 h-7 object-contain bg-white rounded border border-slate-700 cursor-pointer hover:scale-125 transition origin-left shadow mx-auto" data-img="${safeThumb}" title="Nhấp để xem ảnh phóng to (X:${Math.round(box.x)}, Y:${Math.round(box.y)})">
                 </td>
                 <td class="py-2 px-2">
                     <span class="text-[11px] font-mono text-slate-400 bg-slate-800/80 px-1.5 py-0.5 rounded border border-slate-700/60 break-all select-all block max-w-[130px] truncate" title="${row.raw_text.replace(/"/g, '&quot;')}">${row.raw_text.replace(/\n/g, ' ') || '-'}</span>
@@ -703,12 +1106,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                 </td>
                 <td class="py-2 px-2">
-                    <span class="editable-cell font-mono font-bold text-cyan-300 text-[11px] px-1 py-0.5 block truncate max-w-[140px]" contenteditable="true" data-field="full_callout" title="${(row.full_callout || '').replace(/"/g, '&quot;')}">${row.full_callout || '-'}</span>
-                </td>
-                <td class="py-2 px-2 text-center">
-                    <span class="text-[10px] px-1.5 py-0.5 rounded border font-mono ${badgeClass}">${badgeText}</span>
+                    <div class="flex items-center gap-1.5">
+                        <span class="editable-cell font-mono font-bold text-cyan-300 text-[11px] px-1 py-0.5 block truncate max-w-[150px]" contenteditable="true" data-field="full_callout" title="${(row.full_callout || '').replace(/"/g, '&quot;')}">${row.full_callout || '-'}</span>
+                        <span class="ai-learned-badge text-[9px] font-mono px-1 py-0.2 rounded bg-amber-900/50 text-amber-300 border border-amber-600/60 shrink-0 ${(isLearned || isUserCorrected) ? '' : 'hidden'}" title="Đã học theo quy tắc AI">AI</span>
+                        ${row.is_ai_vision ? `<span class="text-[9px] font-mono px-1 py-0.2 rounded bg-purple-900/60 text-purple-300 border border-purple-600/70 shrink-0" title="Đã bóc tách bằng AI Vision">Vision</span>` : ''}
+                    </div>
                 </td>
                 <td class="py-2 px-2 text-center whitespace-nowrap">
+                    <button class="ai-inspect-btn text-slate-400 hover:text-purple-400 p-1 mr-1 transition" title="Dùng AI Vision thẩm định & bóc tách lại kích thước này"><i class="fa-solid fa-wand-magic-sparkles text-[11px]"></i></button>
                     <button class="rotate-row-btn text-slate-400 hover:text-cyan-400 p-1 mr-1 transition" title="Xoay ảnh 90° và quét lại OCR (Dành cho kích thước dọc)"><i class="fa-solid fa-arrow-rotate-right"></i></button>
                     <button class="text-slate-500 hover:text-red-400 delete-btn p-1 transition" title="Xóa dòng"><i class="fa-solid fa-xmark"></i></button>
                 </td>
@@ -721,6 +1126,54 @@ document.addEventListener('DOMContentLoaded', () => {
                 previewModal.classList.remove('hidden');
             });
 
+            // AI Vision Deep Inspect row
+            const aiInspectBtn = tr.querySelector('.ai-inspect-btn');
+            if (aiInspectBtn) {
+                aiInspectBtn.addEventListener('click', async () => {
+                    const b = row.norm_box || (row.raw_box ? {
+                        x: row.raw_box.x / state.pageWidth,
+                        y: row.raw_box.y / state.pageHeight,
+                        width: row.raw_box.w / state.pageWidth,
+                        height: row.raw_box.h / state.pageHeight
+                    } : null);
+                    if (!b) return;
+
+                    aiInspectBtn.innerHTML = '<i class="fa-solid fa-spinner animate-spin text-purple-400"></i>';
+                    try {
+                        const curRot = row.crop_rotation || 0;
+                        const resp = await fetch('/api/ai-vision/inspect-crop', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                file_id: state.fileId,
+                                page_num: row.page !== undefined ? row.page : state.currentPage,
+                                crop_box: b,
+                                raw_ocr_hint: row.raw_text,
+                                page_rotation: state.pageRotation,
+                                crop_rotation: curRot
+                            })
+                        });
+                        const data = await resp.json();
+                        if (data.nominal_str || data.full_callout) {
+                            state.rows[idx] = {
+                                ...state.rows[idx],
+                                ...data,
+                                is_ai_vision: true
+                            };
+                            renderTable(false, idx);
+                            showToast(`✨ AI Vision: Đã giải mã xong #${idx + 1}: ${data.full_callout}`, 'success');
+                        } else if (data.ai_error) {
+                            showToast(`AI Vision: ${data.ai_error}`, 'warning');
+                        }
+                    } catch (err) {
+                        showToast(`Lỗi AI Vision: ${err.message}`, 'error');
+                    } finally {
+                        aiInspectBtn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles text-[11px]"></i>';
+                        checkAiVisionStatus();
+                    }
+                });
+            }
+
             // Rotate row 90 deg and re-OCR
             const rotateRowBtn = tr.querySelector('.rotate-row-btn');
             if (rotateRowBtn) {
@@ -730,31 +1183,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         const nextRot = (curRot + 90) % 360;
                         await processCrop(row.raw_box.x, row.raw_box.y, row.raw_box.w, row.raw_box.h, nextRot, row.id);
                     }
-                });
-            }
-
-            // Copy coordinates JSON for AI / debug
-            const copyCoordBtn = tr.querySelector('.copy-coords-btn');
-            if (copyCoordBtn) {
-                copyCoordBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    const b = row.box || row.raw_box || { x: 0, y: 0, w: 0, h: 0 };
-                    const coordJson = JSON.stringify({
-                        id: row.id,
-                        page: row.page ?? state.currentPage,
-                        box: b,
-                        norm_box: row.norm_box || {
-                            x: b.x / state.pageWidth,
-                            y: b.y / state.pageHeight,
-                            width: b.w / state.pageWidth,
-                            height: b.h / state.pageHeight
-                        }
-                    }, null, 2);
-                    navigator.clipboard.writeText(coordJson).then(() => {
-                        showToast(`📋 Đã sao chép tọa độ mục #${idx + 1} (${coordStr}) vào Clipboard`, 'success');
-                    }).catch(() => {
-                        showToast(`Tọa độ #${idx + 1}: ${coordStr}`, 'info');
-                    });
                 });
             }
 
@@ -780,11 +1208,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
 
                     row.user_corrected = true;
-                    // Cap nhat badge "AI Da hoc" ngay lap tuc
-                    const badgeSpan = tr.querySelector('td:nth-last-child(2) span');
-                    if (badgeSpan) {
-                        badgeSpan.className = 'text-[10px] px-1.5 py-0.5 rounded border font-mono bg-amber-900/60 text-amber-300 border-amber-600/70 shadow-sm';
-                        badgeSpan.textContent = 'AI Đã học';
+                    // Hien thi badge AI Da hoc
+                    const aiBadge = tr.querySelector('.ai-learned-badge');
+                    if (aiBadge) {
+                        aiBadge.classList.remove('hidden');
                     }
 
                     // Gui phan hoi len server de hoc thich ung 1-Shot
@@ -820,13 +1247,67 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             // Delete row
-            tr.querySelector('.delete-btn').addEventListener('click', () => {
+            tr.querySelector('.delete-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
                 state.rows.splice(idx, 1);
+                if (state.selectedRowId === row.id) {
+                    state.selectedRowId = null;
+                }
                 renderTable();
                 render();
             });
 
+            // Nhấp vào dòng để Chọn Box xanh tương ứng trên Canvas
+            tr.dataset.rowId = row.id;
+            if (state.selectedRowId === row.id) {
+                tr.classList.add('bg-cyan-950/40', 'border-l-4', 'border-l-cyan-400');
+            }
+            tr.addEventListener('click', (e) => {
+                // Nếu bấm vào input edit hoặc button con thì không trigger chọn
+                if (e.target.isContentEditable || e.target.closest('button') || e.target.tagName === 'INPUT') {
+                    return;
+                }
+                if (state.selectedRowId === row.id) {
+                    state.selectedRowId = null;
+                    unhighlightTableRows();
+                } else {
+                    state.selectedRowId = row.id;
+                    highlightTableRow(row.id);
+                }
+                render();
+            });
+
             resultsTableBody.appendChild(tr);
+        });
+
+        // Tu dong cuon xuong duoi de xem ket qua moi nhat
+        if (autoScroll && tableScrollContainer) {
+            setTimeout(() => {
+                tableScrollContainer.scrollTo({
+                    top: tableScrollContainer.scrollHeight,
+                    behavior: 'smooth'
+                });
+            }, 60);
+        }
+    }
+
+    // Helper: Đồng bộ highlight bảng khi chọn box trên canvas
+    function highlightTableRow(rowId) {
+        if (!resultsTableBody) return;
+        resultsTableBody.querySelectorAll('tr').forEach(tr => {
+            if (parseInt(tr.dataset.rowId) === rowId) {
+                tr.classList.add('bg-cyan-950/40', 'border-l-4', 'border-l-cyan-400');
+                tr.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            } else {
+                tr.classList.remove('bg-cyan-950/40', 'border-l-4', 'border-l-cyan-400');
+            }
+        });
+    }
+
+    function unhighlightTableRows() {
+        if (!resultsTableBody) return;
+        resultsTableBody.querySelectorAll('tr').forEach(tr => {
+            tr.classList.remove('bg-cyan-950/40', 'border-l-4', 'border-l-cyan-400');
         });
     }
 
@@ -864,6 +1345,15 @@ document.addEventListener('DOMContentLoaded', () => {
     previewModal.addEventListener('click', () => {
         previewModal.classList.add('hidden');
     });
+
+    if (scrollToBottomBtn && tableScrollContainer) {
+        scrollToBottomBtn.addEventListener('click', () => {
+            tableScrollContainer.scrollTo({
+                top: tableScrollContainer.scrollHeight,
+                behavior: 'smooth'
+            });
+        });
+    }
 
     clearAllBtn.addEventListener('click', () => {
         if (state.rows.length === 0) return;
@@ -1052,6 +1542,291 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (closeAdaptiveBtn) closeAdaptiveBtn.addEventListener('click', () => adaptiveModal.classList.add('hidden'));
     if (closeAdaptiveBtn2) closeAdaptiveBtn2.addEventListener('click', () => adaptiveModal.classList.add('hidden'));
+
+    // =========================================================================
+    // AI VISION LOGIC, USAGE PERCENTAGE & AUTO-SCAN
+    // =========================================================================
+    function updateUsageUI(usage) {
+        if (!usage) return;
+
+        const pct = usage.percent_rpd || 0;
+        const rpdUsed = usage.rpd_used || 0;
+        const rpdLimit = usage.rpd_limit || 1500;
+        const rpmUsed = usage.rpm_used || 0;
+        const rpmLimit = usage.rpm_limit || 15;
+        const tokens = usage.day_tokens || 0;
+
+        // 1. Header Usage Bar
+        if (aiUsagePercentText) {
+            aiUsagePercentText.textContent = `${pct}%`;
+            if (pct >= 90) {
+                aiUsagePercentText.className = 'text-red-400 font-bold';
+            } else if (pct >= 70) {
+                aiUsagePercentText.className = 'text-amber-400 font-bold';
+            } else {
+                aiUsagePercentText.className = 'text-purple-300 font-semibold';
+            }
+        }
+
+        if (aiUsageProgressBar) {
+            aiUsageProgressBar.style.width = `${Math.min(100, Math.max(2, pct))}%`;
+            if (pct >= 90) {
+                aiUsageProgressBar.className = 'h-full bg-red-500 rounded-full transition-all duration-500';
+            } else if (pct >= 70) {
+                aiUsageProgressBar.className = 'h-full bg-amber-500 rounded-full transition-all duration-500';
+            } else {
+                aiUsageProgressBar.className = 'h-full bg-gradient-to-r from-purple-500 to-indigo-400 rounded-full transition-all duration-500';
+            }
+        }
+
+        if (aiUsageReqText) {
+            aiUsageReqText.textContent = `${rpdUsed}/${rpdLimit}`;
+        }
+
+        // 2. Modal Breakdown
+        if (aiModalPercentBadge) {
+            aiModalPercentBadge.textContent = `${pct}% used`;
+        }
+        if (aiModalRpdText) {
+            aiModalRpdText.textContent = `${rpdUsed} / ${rpdLimit} req`;
+        }
+        if (aiModalRpdBar) {
+            aiModalRpdBar.style.width = `${Math.min(100, pct)}%`;
+        }
+        if (aiModalRpmText) {
+            aiModalRpmText.textContent = `${rpmUsed} / ${rpmLimit} req/phút`;
+        }
+        if (aiModalRpmBar) {
+            const rpmPct = Math.min(100, (rpmUsed / rpmLimit) * 100);
+            aiModalRpmBar.style.width = `${rpmPct}%`;
+        }
+        if (aiModalTokensText) {
+            aiModalTokensText.textContent = Number(tokens).toLocaleString();
+        }
+    }
+
+    async function checkAiVisionStatus() {
+        try {
+            const resp = await fetch('/api/ai-vision/status');
+            const data = await resp.json();
+            if (data.configured && data.status === 'ready') {
+                if (aiVisionStatusBadge) {
+                    aiVisionStatusBadge.textContent = 'Sẵn sàng';
+                    aiVisionStatusBadge.className = 'bg-emerald-900/60 text-emerald-300 border border-emerald-700/50 text-[10px] px-1.5 py-0.2 rounded font-mono';
+                }
+                if (aiStatusDot) aiStatusDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400 shrink-0';
+                if (aiStatusDetail) aiStatusDetail.textContent = `Sẵn sàng hoạt động (${data.model || 'Gemini Flash'})`;
+                if (data.model && aiModelSelect) aiModelSelect.value = data.model;
+            } else {
+                if (aiVisionStatusBadge) {
+                    aiVisionStatusBadge.textContent = 'Chưa cài';
+                    aiVisionStatusBadge.className = 'bg-slate-700 text-slate-400 border border-slate-600 text-[10px] px-1.5 py-0.2 rounded font-mono';
+                }
+                if (aiStatusDot) aiStatusDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400 shrink-0';
+                if (aiStatusDetail) aiStatusDetail.textContent = data.message || 'Chưa cấu hình API Key';
+            }
+
+            // Update usage bar
+            if (data.usage) {
+                updateUsageUI(data.usage);
+            }
+        } catch (e) {
+            console.error('Error checking AI status:', e);
+        }
+    }
+
+    if (openAiVisionBtn) {
+        openAiVisionBtn.addEventListener('click', () => {
+            checkAiVisionStatus();
+            aiVisionModal.classList.remove('hidden');
+        });
+    }
+
+    if (aiUsageContainer) {
+        aiUsageContainer.addEventListener('click', () => {
+            checkAiVisionStatus();
+            aiVisionModal.classList.remove('hidden');
+        });
+    }
+
+    if (closeAiVisionBtn) closeAiVisionBtn.addEventListener('click', () => aiVisionModal.classList.add('hidden'));
+    if (cancelAiVisionBtn) cancelAiVisionBtn.addEventListener('click', () => aiVisionModal.classList.add('hidden'));
+
+    if (toggleAiKeyVisBtn && aiApiKeyInput) {
+        toggleAiKeyVisBtn.addEventListener('click', () => {
+            if (aiApiKeyInput.type === 'password') {
+                aiApiKeyInput.type = 'text';
+                toggleAiKeyVisBtn.innerHTML = '<i class="fa-solid fa-eye-slash text-xs"></i>';
+            } else {
+                aiApiKeyInput.type = 'password';
+                toggleAiKeyVisBtn.innerHTML = '<i class="fa-solid fa-eye text-xs"></i>';
+            }
+        });
+    }
+
+    if (testAiKeyBtn) {
+        testAiKeyBtn.addEventListener('click', async () => {
+            const key = aiApiKeyInput.value.trim();
+            const model = aiModelSelect.value;
+            if (!key) {
+                alert('Vui lòng nhập API Key trước khi kiểm tra!');
+                return;
+            }
+
+            testAiKeyBtn.innerHTML = '<i class="fa-solid fa-spinner animate-spin"></i> Đang test...';
+            testAiKeyBtn.disabled = true;
+
+            try {
+                const resp = await fetch('/api/ai-vision/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ api_key: key, model_name: model })
+                });
+                const res = await resp.json();
+                if (res.status && res.status.configured) {
+                    showToast('✅ Kết nối Google Gemini Vision thành công!', 'success');
+                    checkAiVisionStatus();
+                } else {
+                    alert('Lỗi: ' + (res.status?.message || 'Không thể kết nối với API Key này'));
+                    checkAiVisionStatus();
+                }
+            } catch (err) {
+                alert('Lỗi kiểm tra: ' + err.message);
+            } finally {
+                testAiKeyBtn.innerHTML = '<i class="fa-solid fa-plug"></i> <span>Kiểm tra kết nối</span>';
+                testAiKeyBtn.disabled = false;
+            }
+        });
+    }
+
+    if (clearAiKeyBtn) {
+        clearAiKeyBtn.addEventListener('click', async () => {
+            if (confirm('Bạn có chắc muốn gỡ bỏ API Key này khỏi hệ thống không?')) {
+                try {
+                    await fetch('/api/ai-vision/config', { method: 'DELETE' });
+                    if (aiApiKeyInput) aiApiKeyInput.value = '';
+                    showToast('Đã gỡ bỏ API Key thành công!', 'adaptive');
+                    await checkAiVisionStatus();
+                } catch (e) {
+                    alert('Lỗi gỡ API key: ' + e.message);
+                }
+            }
+        });
+    }
+
+    if (saveAiVisionBtn) {
+        saveAiVisionBtn.addEventListener('click', async () => {
+            const key = aiApiKeyInput.value.trim();
+            const model = aiModelSelect.value;
+            await fetch('/api/ai-vision/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ api_key: key, model_name: model })
+            });
+            if (key) {
+                showToast('Đã lưu cấu hình AI Vision thành công!', 'success');
+            } else {
+                showToast('Đã cập nhật cấu hình (chưa có API Key)', 'adaptive');
+            }
+            await checkAiVisionStatus();
+            aiVisionModal.classList.add('hidden');
+        });
+    }
+
+    // AI Vision Auto-Scan entire drawing page
+    if (aiAutoScanBtn) {
+        aiAutoScanBtn.addEventListener('click', async () => {
+            if (!state.fileId) {
+                alert('Vui lòng mở hoặc tải bản vẽ PDF trước khi dùng AI Auto-Scan!');
+                return;
+            }
+
+            loadingText.textContent = '🤖 AI Vision đang quét và định vị các kích thước trên bản vẽ...';
+            loadingOverlay.classList.remove('hidden');
+
+            try {
+                const resp = await fetch('/api/ai-vision/auto-detect', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        file_id: state.fileId,
+                        page_num: state.currentPage,
+                        page_rotation: state.pageRotation
+                    })
+                });
+                const data = await resp.json();
+                if (!resp.ok || !data.success) {
+                    throw new Error(data.error || 'Lỗi khi AI Auto-Detect');
+                }
+
+                const dims = data.dimensions || [];
+                if (dims.length === 0) {
+                    showToast('AI Vision không tìm thấy kích thước nào rõ ràng trên trang này', 'info');
+                    return;
+                }
+
+                showToast(`🤖 AI Vision đã phát hiện ${dims.length} kích thước! Đang bóc tách chi tiết...`, 'info');
+
+                let addedCount = 0;
+                for (const d of dims) {
+                    try {
+                        const cropResp = await fetch('/api/crop-ocr', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                file_id: state.fileId,
+                                page_num: state.currentPage,
+                                crop_box: d.crop_box,
+                                global_constraints: state.globalConstraints,
+                                page_rotation: state.pageRotation,
+                                crop_rotation: 0
+                            })
+                        });
+                        const cropData = await cropResp.json();
+                        if (cropResp.ok && (cropData.nominal_str || cropData.raw_text)) {
+                            const newRow = {
+                                id: state.rows.length + 1,
+                                page: state.currentPage,
+                                thumbnail: cropData.thumbnail,
+                                qty: cropData.qty || '',
+                                prefix: cropData.prefix || '',
+                                nominal: cropData.nominal,
+                                nominal_str: cropData.nominal_str || (cropData.nominal !== null ? String(cropData.nominal) : ''),
+                                upper_tol: cropData.upper_tol || '',
+                                lower_tol: cropData.lower_tol || '',
+                                tol_type: cropData.tol_type || 'local',
+                                full_callout: cropData.full_callout || cropData.raw_text || d.label,
+                                raw_text: cropData.raw_text || d.label || '',
+                                raw_box: d.box,
+                                box: cropData.box || d.box,
+                                norm_box: d.crop_box,
+                                crop_rotation: 0,
+                                is_auto_detected: true
+                            };
+                            state.rows.push(newRow);
+                            addedCount++;
+                        }
+                    } catch (e) {
+                        console.error('Lỗi bóc tách ô crop:', e);
+                    }
+                }
+
+                renderTable(true, state.rows.length - 1);
+                render();
+                showToast(`🎉 AI Auto-Scan hoàn tất: Đã bóc tách thành công ${addedCount} kích thước!`, 'success');
+
+            } catch (err) {
+                alert('Lỗi AI Auto-Scan: ' + err.message);
+            } finally {
+                loadingOverlay.classList.add('hidden');
+                loadingText.textContent = 'Đang quét OCR & bóc tách dung sai...';
+                checkAiVisionStatus();
+            }
+        });
+    }
+
+    // Init AI status on startup
+    checkAiVisionStatus();
 
     // Init adaptive count on startup
     updateAdaptiveCount();

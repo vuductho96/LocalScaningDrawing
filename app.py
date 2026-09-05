@@ -3,6 +3,7 @@ import uuid
 import json
 import csv
 import io
+import base64
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -15,6 +16,7 @@ from openpyxl.utils import get_column_letter
 
 from pdf_processor import PDFProcessor
 from tolerance_parser import global_adaptive_learner
+from ai_vision_service import global_ai_vision_service
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
@@ -34,6 +36,65 @@ pdf_processor = PDFProcessor(upload_dir=UPLOAD_DIR)
 
 # Luu danh sach file theo id
 active_files = {}
+
+def get_or_restore_file(file_id: str) -> Optional[Dict[str, Any]]:
+    if not file_id:
+        return None
+    if file_id in active_files:
+        return active_files[file_id]
+
+    # 1. Thu tim file sample mac dinh neu la sample_107 hoac sample
+    if file_id in ["sample_107", "sample"]:
+        sample_path = os.path.join(BASE_DIR, "107-M1457.pdf")
+        if not os.path.exists(sample_path):
+            sample_path = os.path.join(UPLOAD_DIR, "sample_drawing.pdf")
+        if os.path.exists(sample_path):
+            try:
+                info = pdf_processor.get_pdf_info(sample_path)
+                active_files[file_id] = {
+                    "filename": os.path.basename(sample_path),
+                    "path": sample_path,
+                    "page_count": info["page_count"],
+                    "pages": info["pages"]
+                }
+                return active_files[file_id]
+            except Exception:
+                pass
+
+    # 2. Quet UPLOAD_DIR tim file da upload bat dau voi file_id_
+    if os.path.exists(UPLOAD_DIR):
+        for fname in os.listdir(UPLOAD_DIR):
+            if fname.startswith(f"{file_id}_") and fname.lower().endswith(".pdf"):
+                full_path = os.path.join(UPLOAD_DIR, fname)
+                try:
+                    info = pdf_processor.get_pdf_info(full_path)
+                    orig_name = fname[len(file_id) + 1:]
+                    active_files[file_id] = {
+                        "filename": orig_name,
+                        "path": full_path,
+                        "page_count": info["page_count"],
+                        "pages": info["pages"]
+                    }
+                    return active_files[file_id]
+                except Exception:
+                    pass
+
+        # 3. Fallback: file co the luu nguyen ten hoac trung ten
+        direct_path = os.path.join(UPLOAD_DIR, file_id)
+        if os.path.exists(direct_path) and direct_path.lower().endswith(".pdf"):
+            try:
+                info = pdf_processor.get_pdf_info(direct_path)
+                active_files[file_id] = {
+                    "filename": file_id,
+                    "path": direct_path,
+                    "page_count": info["page_count"],
+                    "pages": info["pages"]
+                }
+                return active_files[file_id]
+            except Exception:
+                pass
+
+    return None
 
 class CropRequest(BaseModel):
     file_id: str
@@ -122,10 +183,10 @@ async def upload_pdf(file: UploadFile = File(...)):
 
 @app.get("/api/page_image")
 async def get_page_image(file_id: str, page: int = 0, rotation: int = 0):
-    if file_id not in active_files:
+    file_info = get_or_restore_file(file_id)
+    if not file_info:
         raise HTTPException(status_code=404, detail="Khong tim thay file PDF da upload")
     
-    file_info = active_files[file_id]
     pdf_path = file_info["path"]
     
     try:
@@ -136,10 +197,11 @@ async def get_page_image(file_id: str, page: int = 0, rotation: int = 0):
 
 @app.post("/api/crop-ocr")
 async def crop_ocr(req: CropRequest):
-    if req.file_id not in active_files:
-        raise HTTPException(status_code=404, detail="Khong tim thay file PDF")
+    file_info = get_or_restore_file(req.file_id)
+    if not file_info:
+        raise HTTPException(status_code=404, detail="Khong tim thay file PDF (vui long f5 hoac tai lai file)")
 
-    pdf_path = active_files[req.file_id]["path"]
+    pdf_path = file_info["path"]
     
     try:
         result = pdf_processor.crop_and_extract(
@@ -190,6 +252,134 @@ async def delete_adaptive_rule(key: str, rule_type: str = "exact"):
     if not success:
         raise HTTPException(status_code=404, detail="Khong tim thay quy tac de xoa")
     return {"success": True, "message": f"Da xoa quy tac {key}"}
+
+# ==============================================================================
+# AI VISION ENDPOINTS (Gemini Multimodal Vision LLM)
+# ==============================================================================
+
+class AIVisionConfigRequest(BaseModel):
+    api_key: str
+    model_name: Optional[str] = "gemini-flash-latest"
+
+class AIInspectCropRequest(BaseModel):
+    file_id: str
+    page_num: int = 0
+    crop_box: Dict[str, float]
+    raw_ocr_hint: Optional[str] = ""
+    page_rotation: int = 0
+    crop_rotation: int = 0
+
+class AIAutoDetectRequest(BaseModel):
+    file_id: str
+    page_num: int = 0
+    page_rotation: int = 0
+
+@app.get("/api/ai-vision/status")
+async def get_ai_vision_status():
+    """Kiem tra trang thai cau hinh va san sang cua AI Vision."""
+    return global_ai_vision_service.check_status()
+
+@app.get("/api/ai-vision/usage")
+async def get_ai_vision_usage():
+    """Lay thong tin phan tram va so luong request / quota cua API Key."""
+    return global_ai_vision_service.get_usage_stats()
+
+@app.post("/api/ai-vision/config")
+async def set_ai_vision_config(req: AIVisionConfigRequest):
+    """Luu API key va cau hinh model AI Vision."""
+    saved = global_ai_vision_service.save_config(req.api_key, req.model_name)
+    status = global_ai_vision_service.check_status()
+    return {"success": saved, "status": status}
+
+@app.delete("/api/ai-vision/config")
+async def clear_ai_vision_config():
+    """Gỡ bỏ API key hoàn toàn khỏi hệ thống."""
+    global_ai_vision_service.clear_config()
+    status = global_ai_vision_service.check_status()
+    return {"success": True, "status": status}
+
+@app.post("/api/ai-vision/inspect-crop")
+async def ai_inspect_crop(req: AIInspectCropRequest):
+    """
+    Dung AI Vision (Gemini) phan tich sau anh crop de giai ma kich thuoc kho,
+    chu xoay nghieng, ky hieu GD&T hoac dung sai dac biet.
+    """
+    file_info = get_or_restore_file(req.file_id)
+    if not file_info:
+        raise HTTPException(status_code=404, detail="Khong tim thay file PDF")
+
+    pdf_path = file_info["path"]
+    try:
+        crop_res = pdf_processor.crop_and_extract(
+            pdf_path=pdf_path,
+            page_num=req.page_num,
+            crop_box=req.crop_box,
+            page_rotation=req.page_rotation,
+            crop_rotation=req.crop_rotation
+        )
+        
+        thumb_data = crop_res.get("thumbnail", "")
+        if "," in thumb_data:
+            thumb_b64 = thumb_data.split(",")[1]
+            img_bytes = base64.b64decode(thumb_b64)
+        else:
+            raise ValueError("Khong the trich xuat anh thumbnail")
+
+        ai_res = global_ai_vision_service.inspect_crop(
+            img_bytes, 
+            raw_ocr_hint=req.raw_ocr_hint or crop_res.get("raw_text", "")
+        )
+        
+        if not ai_res.get("success"):
+            return {**crop_res, "ai_error": ai_res.get("error")}
+
+        # Merge ket qua AI Vision
+        merged = {
+            **crop_res,
+            "nominal": ai_res.get("nominal", crop_res.get("nominal")),
+            "nominal_str": ai_res.get("nominal_str") or crop_res.get("nominal_str"),
+            "upper_tol": ai_res.get("upper_tol", crop_res.get("upper_tol")),
+            "lower_tol": ai_res.get("lower_tol", crop_res.get("lower_tol")),
+            "qty": ai_res.get("qty", crop_res.get("qty")),
+            "prefix": ai_res.get("prefix", crop_res.get("prefix")),
+            "suffix": ai_res.get("suffix", crop_res.get("suffix")),
+            "tol_type": ai_res.get("tol_type", crop_res.get("tol_type")),
+            "full_callout": ai_res.get("full_callout", crop_res.get("full_callout")),
+            "ai_explanation": ai_res.get("explanation", ""),
+            "source": ai_res.get("source", "ai_vision")
+        }
+        return merged
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Loi AI Vision Inspect: {str(e)}")
+
+@app.post("/api/ai-vision/auto-detect")
+async def ai_auto_detect(req: AIAutoDetectRequest):
+    """
+    Dung AI Vision quet toan bo trang ban ve va phat hien tat ca cac cum kich thuoc.
+    """
+    file_info = get_or_restore_file(req.file_id)
+    if not file_info:
+        raise HTTPException(status_code=404, detail="Khong tim thay file PDF")
+
+    pdf_path = file_info["path"]
+    try:
+        cache_path, w, h = pdf_processor.render_page(
+            pdf_path, 
+            page_num=req.page_num, 
+            dpi=200, 
+            rotation=req.page_rotation
+        )
+        with open(cache_path, "rb") as f:
+            img_bytes = f.read()
+
+        res = global_ai_vision_service.auto_detect_dimensions(
+            img_bytes, 
+            page_width=w, 
+            page_height=h
+        )
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Loi AI Auto-Detect: {str(e)}")
 
 @app.post("/api/export-excel")
 async def export_excel(req: ExportRequest):
@@ -384,10 +574,11 @@ async def crop_by_coords(req: CropCoordsRequest):
     """
     Endpoint ho tro AI / Script debug: Tu dong crop theo toa do pixel chinh xac tren ban ve.
     """
-    if req.file_id not in active_files:
+    file_info = get_or_restore_file(req.file_id)
+    if not file_info:
         raise HTTPException(status_code=404, detail="Khong tim thay file PDF da upload")
 
-    pdf_path = active_files[req.file_id]["path"]
+    pdf_path = file_info["path"]
     cache_path, img_w, img_h = pdf_processor.render_page(pdf_path, page_num=req.page_num, dpi=200)
 
     norm_box = {

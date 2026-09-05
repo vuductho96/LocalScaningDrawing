@@ -51,6 +51,29 @@
                 <span id="adaptiveCountBadge" class="bg-amber-900/60 text-amber-300 border border-amber-700/50 text-[10px] px-1.5 py-0.2 rounded font-mono">0 quy tắc</span>
             </button>
 
+            <!-- AI Vision Config Button & Usage Bar -->
+            <div class="flex items-center bg-slate-700/80 hover:bg-slate-700 border border-slate-600 rounded-lg p-1 space-x-2 transition">
+                <button id="openAiVisionBtn" class="text-slate-200 text-xs font-medium px-2 py-1 rounded flex items-center gap-1.5 transition" title="Cấu hình AI Vision (Gemini)">
+                    <i class="fa-solid fa-eye text-purple-400"></i>
+                    <span>AI Vision</span>
+                    <span id="aiVisionStatusBadge" class="bg-emerald-900/60 text-emerald-300 border border-emerald-700/50 text-[10px] px-1.5 py-0.2 rounded font-mono">Sẵn sàng</span>
+                </button>
+
+                <!-- Usage Progress Bar (RPD / Quota) -->
+                <div id="aiUsageContainer" class="flex items-center gap-2 pl-2 border-l border-slate-600/80 pr-1.5 cursor-pointer" title="Hạn ngạch API Key miễn phí (1500 req/ngày, 15 req/phút). Nhấp để xem chi tiết.">
+                    <div class="flex flex-col gap-0.5">
+                        <div class="flex items-center justify-between text-[10px] font-mono leading-none gap-2">
+                            <span class="text-slate-400">Usage:</span>
+                            <span id="aiUsagePercentText" class="text-purple-300 font-semibold">0%</span>
+                        </div>
+                        <div class="w-16 h-1.5 bg-slate-800 rounded-full overflow-hidden border border-slate-600/60">
+                            <div id="aiUsageProgressBar" class="h-full bg-gradient-to-r from-purple-500 to-indigo-400 rounded-full transition-all duration-500" style="width: 0%;"></div>
+                        </div>
+                    </div>
+                    <span id="aiUsageReqText" class="text-[10px] font-mono text-slate-400" title="Đã dùng / Giới hạn ngày">0/1500</span>
+                </div>
+            </div>
+
             <!-- Upload Button -->
             <label class="bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium px-3 py-2 rounded-lg flex items-center gap-1.5 cursor-pointer shadow-md shadow-blue-600/20 transition">
                 <i class="fa-solid fa-upload"></i>
@@ -107,6 +130,12 @@
                     <span class="text-[11px] font-medium hidden sm:inline">Crop</span>
                     <span id="cropRotationText" class="text-[10px] font-mono text-cyan-400 font-bold">0°</span>
                 </button>
+                <span class="w-px h-4 bg-slate-700 mx-0.5"></span>
+                <!-- AI Auto-Scan Button -->
+                <button id="aiAutoScanBtn" class="px-2.5 py-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded font-medium text-[11px] flex items-center gap-1.5 shadow-md shadow-purple-600/30 transition" title="Dùng AI Vision quét toàn bộ trang bản vẽ để tự động phát hiện tất cả các kích thước">
+                    <i class="fa-solid fa-wand-magic-sparkles text-amber-300"></i>
+                    <span>AI Auto-Scan</span>
+                </button>
             </div>
 
             <!-- Hint Tooltip -->
@@ -153,7 +182,11 @@
                     <h2 class="text-xs font-bold text-slate-200 uppercase tracking-wider">Danh Sách Kích Thước & Dung Sai</h2>
                     <span id="itemCountBadge" class="bg-blue-900/60 text-blue-300 border border-blue-700/50 text-[10px] font-mono px-2 py-0.5 rounded-full">0 mục</span>
                 </div>
-                <div class="flex items-center space-x-1">
+                <div class="flex items-center space-x-2">
+                    <button id="scrollToBottomBtn" class="text-slate-400 hover:text-cyan-300 text-xs px-2 py-1 rounded transition border border-slate-700/80 hover:border-cyan-500/50 flex items-center gap-1" title="Cuộn xuống kết quả mới nhất">
+                        <i class="fa-solid fa-arrow-down text-[10px]"></i>
+                        <span>Xuống cuối</span>
+                    </button>
                     <button id="clearAllBtn" class="text-slate-400 hover:text-red-400 text-xs px-2 py-1 rounded transition" title="Xóa toàn bộ">
                         <i class="fa-solid fa-trash-can mr-1"></i>Xóa hết
                     </button>
@@ -161,8 +194,8 @@
             </div>
 
             <!-- Table Container -->
-            <div class="flex-1 overflow-y-auto overflow-x-auto p-2">
-                <table class="w-full text-left border-collapse min-w-[580px]">
+            <div id="tableScrollContainer" class="flex-1 overflow-y-auto overflow-x-auto p-2 scroll-smooth">
+                <table class="w-full text-left border-collapse min-w-[540px]">
                     <thead>
                         <tr class="text-[11px] font-semibold text-slate-400 border-b border-slate-800 pb-2">
                             <th class="py-1.5 px-2 w-8 text-center">#</th>
@@ -171,7 +204,7 @@
                             <th class="py-1.5 px-2 w-24">Nominal</th>
                             <th class="py-1.5 px-2 w-24 text-center">Dung sai (+/-)</th>
                             <th class="py-1.5 px-2 w-32">Parse (Callout)</th>
-                            <th class="py-1.5 px-2 w-14 text-center"></th>
+                            <th class="py-1.5 px-2 w-14 text-center">Thao tác</th>
                         </tr>
                     </thead>
                     <tbody id="resultsTableBody" class="divide-y divide-slate-800/60 text-xs">
@@ -317,6 +350,115 @@
             </div>
             <div class="px-5 py-3 bg-slate-750 border-t border-slate-700 flex justify-end">
                 <button id="closeAdaptiveBtn2" class="px-4 py-1.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-semibold">Đóng</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI VISION CONFIG MODAL -->
+    <div id="aiVisionModal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-slate-800 border border-slate-700 rounded-xl w-full max-w-md overflow-hidden shadow-2xl">
+            <div class="px-4 py-3 bg-slate-750 border-b border-slate-700 flex items-center justify-between">
+                <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                    <i class="fa-solid fa-eye text-purple-400"></i>
+                    Cấu Hình AI Vision (Gemini Multimodal LLM)
+                </h3>
+                <button id="closeAiVisionBtn" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="p-4 space-y-4 text-xs">
+                <p class="text-slate-300">
+                    AI Vision sử dụng mô hình thị giác cao cấp của Google để tự động phát hiện toàn bộ kích thước trên bản vẽ và bóc tách chuẩn xác các kích thước khó, ký hiệu GD&T.
+                </p>
+
+                <!-- API Key Input -->
+                <div class="space-y-1.5">
+                    <label class="text-slate-200 font-semibold block flex items-center justify-between">
+                        <span>Gemini API Key:</span>
+                        <a href="https://aistudio.google.com/app/apikey" target="_blank" class="text-purple-400 hover:underline text-[11px] flex items-center gap-1">
+                            <span>Lấy Key Free</span>
+                            <i class="fa-solid fa-arrow-up-right-from-square text-[9px]"></i>
+                        </a>
+                    </label>
+                    <div class="relative">
+                        <input type="password" id="aiApiKeyInput" placeholder="Nhập API Key (AQ... hoặc AIzaSy...)" class="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-slate-100 font-mono text-xs focus:border-purple-500 focus:outline-none">
+                        <button id="toggleAiKeyVisBtn" type="button" class="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-200">
+                            <i class="fa-solid fa-eye text-xs"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Model Selection -->
+                <div class="space-y-1.5">
+                    <label class="text-slate-200 font-semibold block">Mô hình Vision (AI Model):</label>
+                    <select id="aiModelSelect" class="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-slate-100 text-xs focus:border-purple-500 focus:outline-none">
+                        <option value="gemini-flash-latest">Gemini Flash (Khuyên dùng - Nhanh & Miễn phí)</option>
+                        <option value="gemini-3.8-flash">Gemini 3.8 Flash</option>
+                        <option value="gemini-3.7-flash">Gemini 3.7 Flash</option>
+                        <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash-Lite</option>
+                        <option value="gemini-pro-latest">Gemini Pro (Suy luận sâu)</option>
+                    </select>
+                </div>
+
+                <!-- Status indicator -->
+                <div id="aiStatusBox" class="p-2.5 bg-slate-900/80 rounded-lg border border-slate-700/80 flex items-center gap-2.5">
+                    <div id="aiStatusDot" class="w-2.5 h-2.5 rounded-full bg-emerald-400 shrink-0"></div>
+                    <span id="aiStatusDetail" class="text-slate-300 text-[11px]">Đang kiểm tra trạng thái...</span>
+                </div>
+
+                <!-- Detailed Usage & Quota Stats Card -->
+                <div class="p-3 bg-slate-900/90 rounded-lg border border-purple-500/30 space-y-2.5">
+                    <div class="flex items-center justify-between">
+                        <span class="font-semibold text-slate-200 flex items-center gap-1.5">
+                            <i class="fa-solid fa-chart-pie text-purple-400"></i>
+                            <span>Hạn Ngạch Sử Dụng (API Quota Usage)</span>
+                        </span>
+                        <span id="aiModalPercentBadge" class="bg-purple-900/60 text-purple-300 border border-purple-600/60 text-[10px] font-mono px-1.5 py-0.5 rounded">0.0% used</span>
+                    </div>
+
+                    <!-- Requests Per Day Bar -->
+                    <div>
+                        <div class="flex justify-between text-[11px] text-slate-400 mb-1 font-mono">
+                            <span>Lượt gọi trong ngày (RPD):</span>
+                            <span id="aiModalRpdText" class="text-slate-200">0 / 1500 req</span>
+                        </div>
+                        <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden border border-slate-700">
+                            <div id="aiModalRpdBar" class="h-full bg-purple-500 rounded-full transition-all duration-500" style="width: 0%;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Requests Per Minute Bar -->
+                    <div>
+                        <div class="flex justify-between text-[11px] text-slate-400 mb-1 font-mono">
+                            <span>Tốc độ trong phút (RPM):</span>
+                            <span id="aiModalRpmText" class="text-slate-200">0 / 15 req/phút</span>
+                        </div>
+                        <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden border border-slate-700">
+                            <div id="aiModalRpmBar" class="h-full bg-indigo-500 rounded-full transition-all duration-500" style="width: 0%;"></div>
+                        </div>
+                    </div>
+
+                    <div class="pt-1 border-t border-slate-800 flex justify-between items-center text-[10px] text-slate-400">
+                        <span>Tokens xử lý hôm nay: <span id="aiModalTokensText" class="text-cyan-300 font-mono">0</span></span>
+                        <span class="text-emerald-400 font-medium"><i class="fa-solid fa-circle-check mr-1"></i>Gói Free Tier vĩnh viễn</span>
+                    </div>
+                </div>
+            </div>
+            <div class="px-4 py-3 bg-slate-900/60 border-t border-slate-700 flex items-center justify-between">
+                <div class="flex items-center space-x-2">
+                    <button id="testAiKeyBtn" class="bg-slate-700 hover:bg-slate-600 text-slate-200 px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center gap-1.5">
+                        <i class="fa-solid fa-plug"></i>
+                        <span>Kiểm tra</span>
+                    </button>
+                    <button id="clearAiKeyBtn" class="text-slate-400 hover:text-red-400 border border-slate-700 hover:border-red-500/50 px-2.5 py-1.5 rounded-lg text-xs font-medium transition flex items-center gap-1" title="Gỡ bỏ API Key khỏi máy">
+                        <i class="fa-solid fa-trash-can"></i>
+                        <span>Gỡ Key</span>
+                    </button>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <button id="cancelAiVisionBtn" class="text-slate-400 hover:text-white px-3 py-1.5 text-xs">Đóng</button>
+                    <button id="saveAiVisionBtn" class="bg-purple-600 hover:bg-purple-500 text-white font-medium px-4 py-1.5 rounded-lg text-xs transition shadow-md shadow-purple-600/30">
+                        Lưu cấu hình
+                    </button>
+                </div>
             </div>
         </div>
     </div>
