@@ -506,6 +506,19 @@
       "suffix": "",
       "full_callout": "41.42 0/-0.01",
       "user_verified": true
+    },
+    "57.51 ±0.005": {
+      "raw_text": "57.51 ±0.005",
+      "qty": "",
+      "prefix": "",
+      "nominal": 57.51,
+      "nominal_str": "57.51",
+      "upper_tol": "+0.005",
+      "lower_tol": "-0.005",
+      "tol_type": "local",
+      "suffix": "",
+      "full_callout": "57.51 ±0.005 (Đã duyệt QA)",
+      "user_verified": true
     }
   },
   "generalized_rules": [

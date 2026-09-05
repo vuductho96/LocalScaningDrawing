@@ -82,38 +82,46 @@ document.addEventListener('DOMContentLoaded', () => {
     const pageRotationText = document.getElementById('pageRotationText');
     const rotateCropBtn = document.getElementById('rotateCropBtn');
     const cropRotationText = document.getElementById('cropRotationText');
+    const rotateMenuBtn = document.getElementById('rotateMenuBtn');
+    const rotateSubMenu = document.getElementById('rotateSubMenu');
+    const dockRotationIndicator = document.getElementById('dockRotationIndicator');
     
     const pdfFileInput = document.getElementById('pdfFileInput');
     const pdfFileInput2 = document.getElementById('pdfFileInput2');
+    const exportDropdownBtn = document.getElementById('exportDropdownBtn');
+    const exportMenu = document.getElementById('exportMenu');
     const exportExcelBtn = document.getElementById('exportExcelBtn');
     const exportCsvBtn = document.getElementById('exportCsvBtn');
     const clearAllBtn = document.getElementById('clearAllBtn');
+    const tableSearchInput = document.getElementById('tableSearchInput');
     
-    const constraintsModal = document.getElementById('constraintsModal');
-    const openConstraintsBtn = document.getElementById('openConstraintsBtn');
-    const closeConstraintsBtn = document.getElementById('closeConstraintsBtn');
-    const cancelConstraintsBtn = document.getElementById('cancelConstraintsBtn');
-    const saveConstraintsBtn = document.getElementById('saveConstraintsBtn');
-    const globalSummaryBadge = document.getElementById('globalSummaryBadge');
+    // Unified Settings Modal Elements
+    const unifiedSettingsModal = document.getElementById('unifiedSettingsModal');
+    const openUnifiedSettingsBtn = document.getElementById('openUnifiedSettingsBtn');
+    const closeUnifiedSettingsBtn = document.getElementById('closeUnifiedSettingsBtn');
+    const cancelUnifiedSettingsBtn = document.getElementById('cancelUnifiedSettingsBtn');
+    const saveAllSettingsBtn = document.getElementById('saveAllSettingsBtn');
+    const settingsTabBtns = document.querySelectorAll('.settings-tab-btn');
+    const headerSettingsDot = document.getElementById('headerSettingsDot');
 
+    // Legacy / Tab badges & lists
+    const globalSummaryBadge = document.getElementById('globalSummaryBadge');
     const previewModal = document.getElementById('previewModal');
     const previewImg = document.getElementById('previewImg');
-
-    const adaptiveModal = document.getElementById('adaptiveModal');
-    const openAdaptiveBtn = document.getElementById('openAdaptiveBtn');
-    const closeAdaptiveBtn = document.getElementById('closeAdaptiveBtn');
-    const closeAdaptiveBtn2 = document.getElementById('closeAdaptiveBtn2');
     const adaptiveCountBadge = document.getElementById('adaptiveCountBadge');
     const exactRulesList = document.getElementById('exactRulesList');
+    const genRulesList = document.getElementById('genRulesList');
     const toastContainer = document.getElementById('toastContainer');
 
-    // AI Vision Elements
-    const openAiVisionBtn = document.getElementById('openAiVisionBtn');
-    const aiVisionStatusBadge = document.getElementById('aiVisionStatusBadge');
-    const aiVisionModal = document.getElementById('aiVisionModal');
-    const closeAiVisionBtn = document.getElementById('closeAiVisionBtn');
-    const cancelAiVisionBtn = document.getElementById('cancelAiVisionBtn');
-    const saveAiVisionBtn = document.getElementById('saveAiVisionBtn');
+    // Footer Elements
+    const footerAiModelTrigger = document.getElementById('footerAiModelTrigger');
+    const footerAiDot = document.getElementById('footerAiDot');
+    const footerAiModelText = document.getElementById('footerAiModelText');
+    const footerRotationStatus = document.getElementById('footerRotationStatus');
+    const footerTolRuleSummary = document.getElementById('footerTolRuleSummary');
+    const footerUsageTrigger = document.getElementById('footerUsageTrigger');
+
+    // AI Vision Elements inside Tab 1
     const aiApiKeyInput = document.getElementById('aiApiKeyInput');
     const aiModelSelect = document.getElementById('aiModelSelect');
     const testAiKeyBtn = document.getElementById('testAiKeyBtn');
@@ -124,7 +132,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const aiAutoScanBtn = document.getElementById('aiAutoScanBtn');
 
     // AI Usage Progress Bar Elements
-    const aiUsageContainer = document.getElementById('aiUsageContainer');
     const aiUsagePercentText = document.getElementById('aiUsagePercentText');
     const aiUsageProgressBar = document.getElementById('aiUsageProgressBar');
     const aiUsageReqText = document.getElementById('aiUsageReqText');
@@ -339,6 +346,27 @@ document.addEventListener('DOMContentLoaded', () => {
     function isPointInBox(pt, box) {
         return pt.x >= box.x && pt.x <= box.x + box.w &&
                pt.y >= box.y && pt.y <= box.y + box.h;
+    }
+
+    // Tính tỷ lệ trùng lặp (Overlap ratio / IoU) giữa 2 bounding box
+    function calculateBoxOverlap(box1, box2) {
+        const x1 = Math.max(box1.x, box2.x);
+        const y1 = Math.max(box1.y, box2.y);
+        const x2 = Math.min(box1.x + box1.w, box2.x + box2.w);
+        const y2 = Math.min(box1.y + box1.h, box2.y + box2.h);
+
+        const interW = Math.max(0, x2 - x1);
+        const interH = Math.max(0, y2 - y1);
+        const interArea = interW * interH;
+        if (interArea <= 0) return 0;
+
+        const area1 = box1.w * box1.h;
+        const area2 = box2.w * box2.h;
+        const minArea = Math.min(area1, area2);
+        const unionArea = area1 + area2 - interArea;
+
+        // Trả về cả IoU và tỷ lệ chồng lấp so với box nhỏ hơn
+        return Math.max(interArea / (unionArea || 1), interArea / (minArea || 1));
     }
 
     function getHitHandle(pt, box) {
@@ -721,15 +749,39 @@ document.addEventListener('DOMContentLoaded', () => {
             if (state.hasBoxChanged && state.selectedRowId !== null) {
                 const selRow = state.rows.find(r => r.id === state.selectedRowId);
                 if (selRow && selRow.raw_box) {
-                    showToast(`🔄 Đang quét lại OCR theo vị trí mới của #${selRow.id}...`, 'adaptive');
-                    await processCrop(
-                        selRow.raw_box.x,
-                        selRow.raw_box.y,
-                        selRow.raw_box.w,
-                        selRow.raw_box.h,
-                        selRow.crop_rotation || 0,
-                        selRow.id
+                    // Kiểm tra xem sau khi kéo, box này có bị đè lên một box khác không
+                    const otherRowIdx = state.rows.findIndex(r => 
+                        r.id !== selRow.id && 
+                        r.page === state.currentPage && 
+                        r.raw_box && 
+                        calculateBoxOverlap(selRow.raw_box, r.raw_box) > 0.6
                     );
+                    if (otherRowIdx !== -1) {
+                        const targetRow = state.rows[otherRowIdx];
+                        showToast(`🔄 Nhập và cập nhật box vào mục #${targetRow.id}...`, 'adaptive');
+                        // Xóa box đang kéo (để lại box đích và quét lại)
+                        const selIdx = state.rows.findIndex(r => r.id === selRow.id);
+                        state.rows.splice(selIdx, 1);
+                        state.selectedRowId = targetRow.id;
+                        await processCrop(
+                            selRow.raw_box.x,
+                            selRow.raw_box.y,
+                            selRow.raw_box.w,
+                            selRow.raw_box.h,
+                            targetRow.crop_rotation || 0,
+                            targetRow.id
+                        );
+                    } else {
+                        showToast(`🔄 Đang quét lại OCR theo vị trí mới của #${selRow.id}...`, 'adaptive');
+                        await processCrop(
+                            selRow.raw_box.x,
+                            selRow.raw_box.y,
+                            selRow.raw_box.w,
+                            selRow.raw_box.h,
+                            selRow.crop_rotation || 0,
+                            selRow.id
+                        );
+                    }
                 }
             }
             state.hasBoxChanged = false;
@@ -776,7 +828,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Chi scan neu vung crop lon hon 8x8 pixel
             if (w >= 8 && h >= 8) {
-                await processCrop(x0, y0, w, h);
+                const newBox = { x: x0, y: y0, w: w, h: h };
+                // Kiem tra neu vung ve moi de len mot box da co (IoU > 0.5)
+                let overlappedRow = null;
+                for (let i = state.rows.length - 1; i >= 0; i--) {
+                    const r = state.rows[i];
+                    if (r.page === state.currentPage && r.raw_box) {
+                        const overlap = calculateBoxOverlap(newBox, r.raw_box);
+                        if (overlap > 0.5) {
+                            overlappedRow = r;
+                            break;
+                        }
+                    }
+                }
+
+                if (overlappedRow) {
+                    // Cap nhat de len box da co thay vi tao 2 box trung nhau
+                    showToast(`🔄 Quét lại và cập nhật cho kích thước #${overlappedRow.id}...`, 'adaptive');
+                    await processCrop(x0, y0, w, h, overlappedRow.crop_rotation || 0, overlappedRow.id);
+                } else {
+                    await processCrop(x0, y0, w, h);
+                }
             }
         }
     });
@@ -825,12 +897,57 @@ document.addEventListener('DOMContentLoaded', () => {
         render();
     });
 
+    // Helper: Đồng bộ chỉ số xoay trên Dock và Footer
+    function updateRotationUI() {
+        if (pageRotationText) pageRotationText.textContent = `${state.pageRotation}°`;
+        if (cropRotationText) cropRotationText.textContent = `${state.cropRotation}°`;
+        if (dockRotationIndicator) {
+            dockRotationIndicator.textContent = `${state.pageRotation}°`;
+            if (state.pageRotation !== 0 || state.cropRotation !== 0) {
+                dockRotationIndicator.className = 'font-mono text-[10px] text-cyan-400 font-bold';
+            } else {
+                dockRotationIndicator.className = 'font-mono text-[10px] text-slate-400 font-bold';
+            }
+        }
+        if (footerRotationStatus) {
+            footerRotationStatus.textContent = `PDF: ${state.pageRotation}° • Crop: ${state.cropRotation}°`;
+        }
+    }
+
+    // Toggle Rotate SubMenu
+    if (rotateMenuBtn && rotateSubMenu) {
+        rotateMenuBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            rotateSubMenu.classList.toggle('hidden');
+            if (exportMenu) exportMenu.classList.add('hidden');
+        });
+    }
+
+    // Toggle Export Dropdown Menu
+    if (exportDropdownBtn && exportMenu) {
+        exportDropdownBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            exportMenu.classList.toggle('hidden');
+            if (rotateSubMenu) rotateSubMenu.classList.add('hidden');
+        });
+    }
+
+    // Close Dropdown menus when clicking outside
+    document.addEventListener('click', (e) => {
+        if (rotateSubMenu && !rotateSubMenu.contains(e.target) && (!rotateMenuBtn || !rotateMenuBtn.contains(e.target))) {
+            rotateSubMenu.classList.add('hidden');
+        }
+        if (exportMenu && !exportMenu.contains(e.target) && (!exportDropdownBtn || !exportDropdownBtn.contains(e.target))) {
+            exportMenu.classList.add('hidden');
+        }
+    });
+
     // Rotate PDF Button (Xoay trang PDF 90 do)
     if (rotatePdfBtn) {
         rotatePdfBtn.addEventListener('click', async () => {
             if (!state.fileId) return;
             state.pageRotation = (state.pageRotation + 90) % 360;
-            if (pageRotationText) pageRotationText.textContent = `${state.pageRotation}°`;
+            updateRotationUI();
             loadingText.textContent = `Đang xoay bản vẽ ${state.pageRotation}°...`;
             loadingOverlay.classList.remove('hidden');
             try {
@@ -848,7 +965,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (rotateCropBtn) {
         rotateCropBtn.addEventListener('click', () => {
             state.cropRotation = (state.cropRotation + 90) % 360;
-            if (cropRotationText) cropRotationText.textContent = `${state.cropRotation}°`;
+            updateRotationUI();
             if (state.cropRotation !== 0) {
                 rotateCropBtn.classList.add('bg-cyan-600', 'text-white', 'shadow-md', 'shadow-cyan-500/30');
                 rotateCropBtn.classList.remove('text-slate-300', 'hover:bg-slate-700');
@@ -888,8 +1005,7 @@ document.addEventListener('DOMContentLoaded', () => {
             state.currentPage = 0;
             state.pageRotation = 0;
             state.cropRotation = 0;
-            if (pageRotationText) pageRotationText.textContent = '0°';
-            if (cropRotationText) cropRotationText.textContent = '0°';
+            updateRotationUI();
             if (rotateCropBtn) {
                 rotateCropBtn.classList.remove('bg-cyan-600', 'text-white', 'shadow-md', 'shadow-cyan-500/30');
                 rotateCropBtn.classList.add('text-slate-300', 'hover:bg-slate-700');
@@ -1035,7 +1151,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         ...state.rows[existingIdx],
                         ...rowData
                     };
-                    showToast(`Đã xoay ${cropRot}° và quét lại mục #${targetRowId}`, 'success');
+                    renderTable(false, existingIdx);
+                    showToast(`✅ Đã quét lại và cập nhật mục #${targetRowId}`, 'success');
                 }
             } else {
                 const newRow = {
@@ -1070,7 +1187,20 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         tableEmptyState.classList.add('hidden');
 
+        // Lọc kết quả nếu người dùng nhập tìm kiếm
+        const query = (tableSearchInput?.value || '').trim().toLowerCase();
+        let displayCount = 0;
+
         state.rows.forEach((row, idx) => {
+            // Kiểm tra xem dòng này có match query tìm kiếm không
+            if (query) {
+                const searchableText = `${row.nominal_str || ''} ${row.full_callout || ''} ${row.raw_text || ''} ${row.prefix || ''} ${row.qty || ''}`.toLowerCase();
+                if (!searchableText.includes(query)) {
+                    return; // Skip dòng này nếu không khớp
+                }
+            }
+            displayCount++;
+
             const tr = document.createElement('tr');
             tr.className = 'hover:bg-slate-800/50 transition group border-b border-slate-800/40';
             if (highlightIdx === idx) {
@@ -1090,37 +1220,36 @@ document.addEventListener('DOMContentLoaded', () => {
             const box = row.box || row.raw_box || { x: 0, y: 0, w: 0, h: 0 };
 
             tr.innerHTML = `
-                <td class="py-2 px-2 text-center text-slate-500 font-mono text-[11px]">${idx + 1}</td>
-                <td class="py-2 px-2 text-center">
+                <td class="py-2 px-1 text-center text-slate-500 font-mono text-[11px]">${idx + 1}</td>
+                <td class="py-2 px-1 text-center">
                     <img src="${safeThumb}" class="w-12 h-7 object-contain bg-white rounded border border-slate-700 cursor-pointer hover:scale-125 transition origin-left shadow mx-auto" data-img="${safeThumb}" title="Nhấp để xem ảnh phóng to (X:${Math.round(box.x)}, Y:${Math.round(box.y)})">
                 </td>
-                <td class="py-2 px-2">
-                    <span class="text-[11px] font-mono text-slate-400 bg-slate-800/80 px-1.5 py-0.5 rounded border border-slate-700/60 break-all select-all block max-w-[130px] truncate" title="${row.raw_text.replace(/"/g, '&quot;')}">${row.raw_text.replace(/\n/g, ' ') || '-'}</span>
-                </td>
-                <td class="py-2 px-2">
+                <td class="py-2 px-1.5">
                     <div class="flex items-center space-x-1">
                         ${row.prefix ? `<span class="text-amber-400 font-bold font-mono">${row.prefix}</span>` : ''}
                         <span class="editable-cell font-mono font-semibold text-slate-100 px-1 py-0.5" contenteditable="true" data-field="nominal_str">${row.nominal_str}</span>
-                        ${row.qty ? `<span class="text-xs text-slate-400">(${row.qty})</span>` : ''}
+                        ${row.qty ? `<span class="text-[10px] text-slate-400">(${row.qty})</span>` : ''}
                     </div>
                 </td>
-                <td class="py-2 px-2 text-center">
+                <td class="py-2 px-1 text-center">
                     <div class="inline-flex flex-col text-[11px] font-mono leading-tight">
-                        <span class="editable-cell text-blue-300 px-1" contenteditable="true" data-field="upper_tol">${row.upper_tol || '-'}</span>
-                        <span class="editable-cell text-red-300 px-1" contenteditable="true" data-field="lower_tol">${row.lower_tol || '-'}</span>
+                        <span class="editable-cell text-blue-300 px-0.5" contenteditable="true" data-field="upper_tol">${row.upper_tol || '-'}</span>
+                        <span class="editable-cell text-red-300 px-0.5" contenteditable="true" data-field="lower_tol">${row.lower_tol || '-'}</span>
                     </div>
                 </td>
-                <td class="py-2 px-2">
-                    <div class="flex items-center gap-1.5">
-                        <span class="editable-cell font-mono font-bold text-cyan-300 text-[11px] px-1 py-0.5 block truncate max-w-[150px]" contenteditable="true" data-field="full_callout" title="${(row.full_callout || '').replace(/"/g, '&quot;')}">${row.full_callout || '-'}</span>
+                <td class="py-2 px-1.5">
+                    <div class="flex items-center gap-1">
+                        <span class="editable-cell font-mono font-bold text-cyan-300 text-[11px] px-1 py-0.5 block truncate max-w-[140px]" contenteditable="true" data-field="full_callout" title="${(row.full_callout || '').replace(/"/g, '&quot;')}">${row.full_callout || '-'}</span>
                         <span class="ai-learned-badge text-[9px] font-mono px-1 py-0.2 rounded bg-amber-900/50 text-amber-300 border border-amber-600/60 shrink-0 ${(isLearned || isUserCorrected) ? '' : 'hidden'}" title="Đã học theo quy tắc AI">AI</span>
                         ${row.is_ai_vision ? `<span class="text-[9px] font-mono px-1 py-0.2 rounded bg-purple-900/60 text-purple-300 border border-purple-600/70 shrink-0" title="Đã bóc tách bằng AI Vision">Vision</span>` : ''}
                     </div>
                 </td>
-                <td class="py-2 px-2 text-center whitespace-nowrap">
-                    <button class="ai-inspect-btn text-slate-400 hover:text-purple-400 p-1 mr-1 transition" title="Dùng AI Vision thẩm định & bóc tách lại kích thước này"><i class="fa-solid fa-wand-magic-sparkles text-[11px]"></i></button>
-                    <button class="rotate-row-btn text-slate-400 hover:text-cyan-400 p-1 mr-1 transition" title="Xoay ảnh 90° và quét lại OCR (Dành cho kích thước dọc)"><i class="fa-solid fa-arrow-rotate-right"></i></button>
-                    <button class="text-slate-500 hover:text-red-400 delete-btn p-1 transition" title="Xóa dòng"><i class="fa-solid fa-xmark"></i></button>
+                <td class="py-2 px-1 text-center whitespace-nowrap">
+                    <div class="row-actions flex items-center justify-center space-x-1">
+                        <button class="ai-inspect-btn text-slate-400 hover:text-purple-400 p-1 transition" title="Dùng AI Vision thẩm định & bóc tách lại kích thước này"><i class="fa-solid fa-wand-magic-sparkles text-[10px]"></i></button>
+                        <button class="rotate-row-btn text-slate-400 hover:text-cyan-400 p-1 transition" title="Xoay ảnh 90° và quét lại OCR (Dành cho kích thước dọc)"><i class="fa-solid fa-arrow-rotate-right text-[10px]"></i></button>
+                        <button class="text-slate-500 hover:text-red-400 delete-btn p-1 transition" title="Xóa dòng"><i class="fa-solid fa-xmark text-[11px]"></i></button>
+                    </div>
                 </td>
             `;
 
@@ -1173,7 +1302,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     } catch (err) {
                         showToast(`Lỗi AI Vision: ${err.message}`, 'error');
                     } finally {
-                        aiInspectBtn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles text-[11px]"></i>';
+                        aiInspectBtn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles text-[10px]"></i>';
                         checkAiVisionStatus();
                     }
                 });
@@ -1193,36 +1322,47 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Inline edit listeners with Real-Time Adaptive Feedback Loop
             tr.querySelectorAll('.editable-cell').forEach(cell => {
-                let initialVal = cell.innerText.trim();
-                cell.addEventListener('focus', (e) => {
-                    initialVal = e.target.innerText.trim();
+                const field = cell.dataset.field;
+
+                // Enter de luu va bo focus
+                cell.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        cell.blur();
+                    }
                 });
 
-                cell.addEventListener('blur', async (e) => {
-                    const field = e.target.dataset.field;
-                    const newVal = e.target.innerText.trim();
-                    if (newVal === initialVal) return; // Khong thay doi
+                // Luu gia tri moi khi blur (nguoi dung roi khoi o)
+                cell.addEventListener('blur', async () => {
+                    const oldVal = row[field];
+                    const newVal = cell.textContent.trim();
 
-                    row[field] = newVal;
-                    if (field === 'nominal_str') {
-                        const parsedNum = parseFloat(row[field]);
-                        if (!isNaN(parsedNum)) row.nominal = parsedNum;
-                    }
-                    if (field !== 'full_callout') {
+                    if (oldVal !== newVal) {
+                        row[field] = newVal;
+                        row.user_corrected = true; // Danh dau user da tu tay sua
+
+                        // Dong bo logic: Neu sua nominal_str thi parse lai float
+                        if (field === 'nominal_str') {
+                            const parsedNum = parseFloat(newVal.replace(',', '.'));
+                            row.nominal = isNaN(parsedNum) ? null : Math.abs(parsedNum);
+                        }
+
+                        // Cap nhat lai chuoi callout tong the
                         updateRowCallout(row);
-                    }
 
-                    row.user_corrected = true;
-                    // Hien thi badge AI Da hoc
-                    const aiBadge = tr.querySelector('.ai-learned-badge');
-                    if (aiBadge) {
-                        aiBadge.classList.remove('hidden');
-                    }
+                        // Hien thi badge AI Learned
+                        const badge = tr.querySelector('.ai-learned-badge');
+                        if (badge) badge.classList.remove('hidden');
 
-                    // Gui phan hoi len server de hoc thich ung 1-Shot
-                    if (row.raw_text) {
+                        // Cap nhat text tren o Callout
+                        const calloutCell = tr.querySelector('[data-field="full_callout"]');
+                        if (calloutCell) calloutCell.textContent = row.full_callout;
+
+                        // =========================================================
+                        // REAL-TIME FEEDBACK LOOP: Day ngay quy tac sua len Backend
+                        // =========================================================
                         try {
-                            const resp = await fetch('/api/feedback/correct', {
+                            const resp = await fetch('/api/feedback/submit', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({
@@ -1235,13 +1375,12 @@ document.addEventListener('DOMContentLoaded', () => {
                                         upper_tol: row.upper_tol === '-' ? '' : row.upper_tol,
                                         lower_tol: row.lower_tol === '-' ? '' : row.lower_tol,
                                         tol_type: 'user_defined',
-                                        suffix: row.suffix || '',
                                         full_callout: row.full_callout
                                     }
                                 })
                             });
                             if (resp.ok) {
-                                showToast(`💡 AI đã ghi nhớ: "${row.raw_text.replace(/\n/g, ' ')}" ➔ ${row.full_callout}`, 'adaptive');
+                                showToast(`💡 AI đã ghi nhớ quy tắc: "${row.raw_text.replace(/\n/g, ' ')}" ➔ ${row.full_callout}`, 'adaptive');
                                 updateAdaptiveCount();
                             }
                         } catch (err) {
@@ -1285,6 +1424,10 @@ document.addEventListener('DOMContentLoaded', () => {
             resultsTableBody.appendChild(tr);
         });
 
+        if (query) {
+            itemCountBadge.textContent = `${displayCount}/${state.rows.length} mục`;
+        }
+
         // Tu dong cuon xuong duoi de xem ket qua moi nhat
         if (autoScroll && tableScrollContainer) {
             setTimeout(() => {
@@ -1294,6 +1437,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             }, 60);
         }
+    }
+
+    // Lắng nghe sự kiện tìm kiếm / lọc bảng
+    if (tableSearchInput) {
+        tableSearchInput.addEventListener('input', () => {
+            renderTable(false);
+        });
     }
 
     // Helper: Đồng bộ highlight bảng khi chọn box trên canvas
@@ -1369,38 +1519,133 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Global Constraints Modal
-    openConstraintsBtn.addEventListener('click', () => {
-        constraintsModal.classList.remove('hidden');
-    });
-    closeConstraintsBtn.addEventListener('click', () => constraintsModal.classList.add('hidden'));
-    cancelConstraintsBtn.addEventListener('click', () => constraintsModal.classList.add('hidden'));
+    // Helper: Mở Unified Settings Modal tại tab chỉ định
+    function openUnifiedSettings(targetTab = 'tab-ai-vision') {
+        if (!unifiedSettingsModal) return;
+        
+        // Kích hoạt tab tương ứng
+        settingsTabBtns.forEach(btn => {
+            if (btn.dataset.tab === targetTab) {
+                btn.classList.add('active', 'border-blue-500', 'text-blue-400', 'bg-blue-500/10');
+                btn.classList.remove('border-transparent', 'text-slate-400');
+            } else {
+                btn.classList.remove('active', 'border-blue-500', 'text-blue-400', 'bg-blue-500/10');
+                btn.classList.add('border-transparent', 'text-slate-400');
+            }
+        });
 
-    saveConstraintsBtn.addEventListener('click', () => {
-        const selectedMode = document.querySelector('input[name="gcMode"]:checked').value;
-        state.globalConstraints.mode = selectedMode;
+        // Hiển thị panel tương ứng
+        document.querySelectorAll('.tab-pane').forEach(pane => {
+            if (pane.id === targetTab) {
+                pane.classList.remove('hidden');
+            } else {
+                pane.classList.add('hidden');
+            }
+        });
 
-        if (selectedMode === 'decimals') {
-            state.globalConstraints.decimals = {
-                0: parseFloat(document.getElementById('dec0').value) || 0.2,
-                1: parseFloat(document.getElementById('dec1').value) || 0.1,
-                2: parseFloat(document.getElementById('dec2').value) || 0.05,
-                3: parseFloat(document.getElementById('dec3').value) || 0.01,
-                4: parseFloat(document.getElementById('dec4').value) || 0.005,
-                5: parseFloat(document.getElementById('dec5').value) || 0.001
-            };
-            globalSummaryBadge.textContent = 'Thập phân';
-        } else if (selectedMode === 'fixed') {
-            state.globalConstraints.fixed_value = parseFloat(document.getElementById('fixedVal').value) || 0.1;
-            globalSummaryBadge.textContent = `±${state.globalConstraints.fixed_value}mm`;
-        } else {
-            const iso = document.getElementById('isoLevel').value;
-            state.globalConstraints.mode = iso;
-            globalSummaryBadge.textContent = iso.replace('iso2768_', 'ISO-');
+        // Nạp dữ liệu cần thiết cho tab
+        if (targetTab === 'tab-ai-vision') {
+            checkAiVisionStatus();
+        } else if (targetTab === 'tab-adaptive') {
+            loadAdaptiveRules();
         }
 
-        constraintsModal.classList.add('hidden');
+        unifiedSettingsModal.classList.remove('hidden');
+    }
+
+    function closeUnifiedSettings() {
+        if (unifiedSettingsModal) {
+            unifiedSettingsModal.classList.add('hidden');
+        }
+    }
+
+    // Tab buttons click
+    settingsTabBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const targetTab = btn.dataset.tab;
+            openUnifiedSettings(targetTab);
+        });
     });
+
+    // Triggers to open Unified Settings
+    if (openUnifiedSettingsBtn) {
+        openUnifiedSettingsBtn.addEventListener('click', () => openUnifiedSettings('tab-ai-vision'));
+    }
+    if (footerUsageTrigger) {
+        footerUsageTrigger.addEventListener('click', () => openUnifiedSettings('tab-ai-vision'));
+    }
+    if (footerAiModelTrigger) {
+        footerAiModelTrigger.addEventListener('click', () => openUnifiedSettings('tab-ai-vision'));
+    }
+    if (footerTolRuleSummary) {
+        footerTolRuleSummary.addEventListener('click', () => openUnifiedSettings('tab-constraints'));
+    }
+
+    if (closeUnifiedSettingsBtn) {
+        closeUnifiedSettingsBtn.addEventListener('click', closeUnifiedSettings);
+    }
+    if (cancelUnifiedSettingsBtn) {
+        cancelUnifiedSettingsBtn.addEventListener('click', closeUnifiedSettings);
+    }
+
+    // Lưu toàn bộ cấu hình (Dung sai chung + AI Vision) khi nhấn nút Lưu & Áp Dụng
+    if (saveAllSettingsBtn) {
+        saveAllSettingsBtn.addEventListener('click', async () => {
+            // 1. Lưu Dung sai chung
+            const selectedMode = document.querySelector('input[name="gcMode"]:checked')?.value || 'decimals';
+            state.globalConstraints.mode = selectedMode;
+
+            if (selectedMode === 'decimals') {
+                state.globalConstraints.decimals = {
+                    0: parseFloat(document.getElementById('dec0')?.value) || 0.2,
+                    1: parseFloat(document.getElementById('dec1')?.value) || 0.1,
+                    2: parseFloat(document.getElementById('dec2')?.value) || 0.05,
+                    3: parseFloat(document.getElementById('dec3')?.value) || 0.01,
+                    4: parseFloat(document.getElementById('dec4')?.value) || 0.005,
+                    5: parseFloat(document.getElementById('dec5')?.value) || 0.001
+                };
+                if (globalSummaryBadge) globalSummaryBadge.textContent = 'Thập phân';
+                if (footerTolRuleSummary) footerTolRuleSummary.textContent = 'Dung sai: Thập phân';
+            } else if (selectedMode === 'fixed') {
+                state.globalConstraints.fixed_value = parseFloat(document.getElementById('fixedVal')?.value) || 0.1;
+                const fixedTxt = `±${state.globalConstraints.fixed_value}mm`;
+                if (globalSummaryBadge) globalSummaryBadge.textContent = fixedTxt;
+                if (footerTolRuleSummary) footerTolRuleSummary.textContent = `Dung sai: ${fixedTxt}`;
+            } else {
+                const iso = document.getElementById('isoLevel')?.value || 'iso2768_m';
+                state.globalConstraints.mode = iso;
+                const isoTxt = iso.replace('iso2768_', 'ISO-');
+                if (globalSummaryBadge) globalSummaryBadge.textContent = isoTxt;
+                if (footerTolRuleSummary) footerTolRuleSummary.textContent = `Dung sai: ${isoTxt}`;
+            }
+
+            // 2. Lưu AI Vision Config
+            const key = aiApiKeyInput ? aiApiKeyInput.value.trim() : '';
+            const model = aiModelSelect ? aiModelSelect.value : 'gemini-flash-latest';
+            const tier = aiBillingTierSelect ? aiBillingTierSelect.value : 'free';
+            const customRpd = customRpdInput ? parseInt(customRpdInput.value) || 0 : 0;
+
+            try {
+                await fetch('/api/ai-vision/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        api_key: key,
+                        model_name: model,
+                        billing_tier: tier,
+                        custom_rpd_limit: customRpd
+                    })
+                });
+                showToast('✅ Đã lưu cấu hình hệ thống & dung sai thành công!', 'success');
+            } catch (err) {
+                console.error('Lỗi lưu AI Config:', err);
+                showToast('Đã cập nhật dung sai chung!', 'success');
+            }
+
+            await checkAiVisionStatus();
+            closeUnifiedSettings();
+        });
+    }
 
     // Export to Excel
     exportExcelBtn.addEventListener('click', async () => {
@@ -1539,15 +1784,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    if (openAdaptiveBtn) {
-        openAdaptiveBtn.addEventListener('click', () => {
-            loadAdaptiveRules();
-            adaptiveModal.classList.remove('hidden');
-        });
-    }
-    if (closeAdaptiveBtn) closeAdaptiveBtn.addEventListener('click', () => adaptiveModal.classList.add('hidden'));
-    if (closeAdaptiveBtn2) closeAdaptiveBtn2.addEventListener('click', () => adaptiveModal.classList.add('hidden'));
-
     // =========================================================================
     // AI VISION LOGIC, USAGE PERCENTAGE & AUTO-SCAN
     // =========================================================================
@@ -1653,21 +1889,24 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const resp = await fetch('/api/ai-vision/status');
             const data = await resp.json();
-            if (data.configured && data.status === 'ready') {
-                if (aiVisionStatusBadge) {
-                    aiVisionStatusBadge.textContent = 'Sẵn sàng';
-                    aiVisionStatusBadge.className = 'bg-emerald-900/60 text-emerald-300 border border-emerald-700/50 text-[10px] px-1.5 py-0.2 rounded font-mono';
-                }
+            const isReady = (data.configured && data.status === 'ready');
+            const modelDisplay = data.model 
+                ? (data.model.includes('pro') ? 'Gemini Pro' : data.model.includes('flash-lite') ? 'Flash-Lite' : 'Gemini Flash') 
+                : 'Gemini Flash';
+
+            if (isReady) {
                 if (aiStatusDot) aiStatusDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400 shrink-0';
-                if (aiStatusDetail) aiStatusDetail.textContent = `Sẵn sàng hoạt động (${data.model || 'Gemini Flash'})`;
+                if (aiStatusDetail) aiStatusDetail.textContent = `Sẵn sàng hoạt động (${modelDisplay})`;
                 if (data.model && aiModelSelect) aiModelSelect.value = data.model;
+                if (footerAiDot) footerAiDot.className = 'w-2 h-2 rounded-full bg-emerald-400';
+                if (footerAiModelText) footerAiModelText.textContent = modelDisplay;
+                if (headerSettingsDot) headerSettingsDot.className = 'w-2 h-2 rounded-full bg-emerald-400 ml-0.5';
             } else {
-                if (aiVisionStatusBadge) {
-                    aiVisionStatusBadge.textContent = 'Chưa cài';
-                    aiVisionStatusBadge.className = 'bg-slate-700 text-slate-400 border border-slate-600 text-[10px] px-1.5 py-0.2 rounded font-mono';
-                }
                 if (aiStatusDot) aiStatusDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400 shrink-0';
                 if (aiStatusDetail) aiStatusDetail.textContent = data.message || 'Chưa cấu hình API Key';
+                if (footerAiDot) footerAiDot.className = 'w-2 h-2 rounded-full bg-amber-400';
+                if (footerAiModelText) footerAiModelText.textContent = 'Chưa cài API Key';
+                if (headerSettingsDot) headerSettingsDot.className = 'w-2 h-2 rounded-full bg-amber-400 ml-0.5';
             }
 
             // Update usage bar
@@ -1678,23 +1917,6 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('Error checking AI status:', e);
         }
     }
-
-    if (openAiVisionBtn) {
-        openAiVisionBtn.addEventListener('click', () => {
-            checkAiVisionStatus();
-            aiVisionModal.classList.remove('hidden');
-        });
-    }
-
-    if (aiUsageContainer) {
-        aiUsageContainer.addEventListener('click', () => {
-            checkAiVisionStatus();
-            aiVisionModal.classList.remove('hidden');
-        });
-    }
-
-    if (closeAiVisionBtn) closeAiVisionBtn.addEventListener('click', () => aiVisionModal.classList.add('hidden'));
-    if (cancelAiVisionBtn) cancelAiVisionBtn.addEventListener('click', () => aiVisionModal.classList.add('hidden'));
 
     if (toggleAiKeyVisBtn && aiApiKeyInput) {
         toggleAiKeyVisBtn.addEventListener('click', () => {
@@ -1766,33 +1988,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    if (saveAiVisionBtn) {
-        saveAiVisionBtn.addEventListener('click', async () => {
-            const key = aiApiKeyInput.value.trim();
-            const model = aiModelSelect.value;
-            const tier = aiBillingTierSelect ? aiBillingTierSelect.value : 'free';
-            const customRpd = customRpdInput ? parseInt(customRpdInput.value) || 0 : 0;
-
-            await fetch('/api/ai-vision/config', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    api_key: key,
-                    model_name: model,
-                    billing_tier: tier,
-                    custom_rpd_limit: customRpd
-                })
-            });
-            if (key) {
-                showToast('Đã lưu cấu hình AI Vision thành công!', 'success');
-            } else {
-                showToast('Đã cập nhật cấu hình (chưa có API Key)', 'adaptive');
-            }
-            await checkAiVisionStatus();
-            aiVisionModal.classList.add('hidden');
-        });
-    }
-
     // AI Vision Auto-Scan entire drawing page
     if (aiAutoScanBtn) {
         aiAutoScanBtn.addEventListener('click', async () => {
@@ -1844,9 +2039,15 @@ document.addEventListener('DOMContentLoaded', () => {
                         });
                         const cropData = await cropResp.json();
                         if (cropResp.ok && (cropData.nominal_str || cropData.raw_text)) {
-                            const newRow = {
-                                id: state.rows.length + 1,
-                                page: state.currentPage,
+                            const newBox = d.box || cropData.box;
+                            // Kiểm tra xem có bị trùng/chồng đè với box đã tồn tại trên trang không
+                            const existingRow = state.rows.find(r => 
+                                r.page === state.currentPage && 
+                                r.raw_box && 
+                                calculateBoxOverlap(newBox, r.raw_box) > 0.5
+                            );
+
+                            const rowPayload = {
                                 thumbnail: cropData.thumbnail,
                                 qty: cropData.qty || '',
                                 prefix: cropData.prefix || '',
@@ -1863,8 +2064,19 @@ document.addEventListener('DOMContentLoaded', () => {
                                 crop_rotation: 0,
                                 is_auto_detected: true
                             };
-                            state.rows.push(newRow);
-                            addedCount++;
+
+                            if (existingRow) {
+                                // Cập nhật đè lên row đã có thay vì tạo thêm 1 box chồng lên nhau
+                                Object.assign(existingRow, rowPayload);
+                            } else {
+                                const newRow = {
+                                    id: state.rows.length + 1,
+                                    page: state.currentPage,
+                                    ...rowPayload
+                                };
+                                state.rows.push(newRow);
+                                addedCount++;
+                            }
                         }
                     } catch (e) {
                         console.error('Lỗi bóc tách ô crop:', e);

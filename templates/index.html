@@ -7,87 +7,68 @@
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/style.css?v=1.2.1">
 </head>
 <body class="bg-slate-900 text-slate-100 font-sans h-screen flex flex-col overflow-hidden select-none">
 
-    <!-- HEADER -->
-    <header class="bg-slate-800 border-b border-slate-700 px-4 py-2.5 flex items-center justify-between flex-shrink-0">
+    <!-- HEADER (TINH GỌN, HIỆN ĐẠI) -->
+    <header class="bg-slate-900/95 border-b border-slate-800/80 px-4 py-2 flex items-center justify-between flex-shrink-0 z-30">
         <div class="flex items-center space-x-3">
-            <div class="bg-blue-600 p-2 rounded-lg text-white shadow-lg shadow-blue-500/30">
-                <i class="fa-solid fa-drafting-compass text-lg"></i>
+            <div class="bg-gradient-to-tr from-blue-600 to-indigo-500 p-2 rounded-lg text-white shadow-md shadow-blue-500/20">
+                <i class="fa-solid fa-drafting-compass text-base"></i>
             </div>
             <div>
-                <h1 class="text-base font-bold tracking-tight text-white flex items-center gap-2">
+                <h1 class="text-sm font-bold tracking-tight text-white flex items-center gap-1.5 leading-none">
                     AutoScanText
-                    <span class="text-xs bg-blue-500/20 text-blue-400 border border-blue-500/30 px-2 py-0.5 rounded font-mono">OCR v1.0</span>
+                    <span class="text-[10px] bg-blue-500/15 text-blue-400 border border-blue-500/30 px-1.5 py-0.2 rounded font-mono font-normal">v1.2</span>
                 </h1>
-                <p class="text-xs text-slate-400">Trích xuất kích thước danh nghĩa, dung sai ±, stacked tolerance & dung sai chung</p>
+                <p class="text-[11px] text-slate-400 font-normal mt-0.5">Bóc tách kích thước danh nghĩa, GD&T & dung sai bản vẽ cơ khí</p>
             </div>
         </div>
 
-        <!-- Document & Page Navigation -->
-        <div id="pageNavContainer" class="hidden flex items-center bg-slate-700/60 rounded-lg border border-slate-600 px-3 py-1 space-x-2">
-            <span id="docName" class="text-xs text-slate-300 font-medium max-w-[180px] truncate">Drawing.pdf</span>
-            <span class="text-slate-500">|</span>
-            <button id="prevPageBtn" class="text-slate-300 hover:text-white p-1 transition"><i class="fa-solid fa-chevron-left"></i></button>
-            <span class="text-xs font-mono text-blue-400" id="pageIndicator">Trang 1/1</span>
-            <button id="nextPageBtn" class="text-slate-300 hover:text-white p-1 transition"><i class="fa-solid fa-chevron-right"></i></button>
+        <!-- Document & Page Navigation (Trung tâm Header) -->
+        <div id="pageNavContainer" class="hidden flex items-center bg-slate-800/80 rounded-lg border border-slate-700/70 px-3 py-1 space-x-2">
+            <i class="fa-regular fa-file-lines text-slate-400 text-xs"></i>
+            <span id="docName" class="text-xs text-slate-200 font-medium max-w-[200px] truncate" title="Tên bản vẽ">Drawing.pdf</span>
+            <span class="text-slate-600">|</span>
+            <button id="prevPageBtn" class="text-slate-400 hover:text-white p-0.5 transition" title="Trang trước"><i class="fa-solid fa-chevron-left text-xs"></i></button>
+            <span class="text-xs font-mono text-cyan-400 font-semibold" id="pageIndicator">Trang 1/1</span>
+            <button id="nextPageBtn" class="text-slate-400 hover:text-white p-0.5 transition" title="Trang sau"><i class="fa-solid fa-chevron-right text-xs"></i></button>
         </div>
 
-        <!-- Action Toolbar -->
+        <!-- Action Toolbar (Gọn gàng) -->
         <div class="flex items-center space-x-2">
-            <!-- Global Constraints Button -->
-            <button id="openConstraintsBtn" class="bg-slate-700 hover:bg-slate-600 text-slate-200 border border-slate-600 text-xs font-medium px-3 py-2 rounded-lg flex items-center gap-1.5 transition">
-                <i class="fa-solid fa-sliders text-blue-400"></i>
-                <span>Dung sai chung</span>
-                <span id="globalSummaryBadge" class="bg-blue-900/60 text-blue-300 border border-blue-700/50 text-[10px] px-1.5 py-0.2 rounded font-mono">Thập phân</span>
-            </button>
-
-            <!-- Adaptive Learning Rules Button -->
-            <button id="openAdaptiveBtn" class="bg-slate-700 hover:bg-slate-600 text-slate-200 border border-slate-600 text-xs font-medium px-3 py-2 rounded-lg flex items-center gap-1.5 transition" title="Xem quy tắc AI đã tự học từ chỉnh sửa của bạn">
-                <i class="fa-solid fa-brain text-amber-400"></i>
-                <span>Bộ nhớ AI học</span>
-                <span id="adaptiveCountBadge" class="bg-amber-900/60 text-amber-300 border border-amber-700/50 text-[10px] px-1.5 py-0.2 rounded font-mono">0 quy tắc</span>
-            </button>
-
-            <!-- AI Vision Config Button & Usage Bar -->
-            <div class="flex items-center bg-slate-700/80 hover:bg-slate-700 border border-slate-600 rounded-lg p-1 space-x-2 transition">
-                <button id="openAiVisionBtn" class="text-slate-200 text-xs font-medium px-2 py-1 rounded flex items-center gap-1.5 transition" title="Cấu hình AI Vision (Gemini)">
-                    <i class="fa-solid fa-eye text-purple-400"></i>
-                    <span>AI Vision</span>
-                    <span id="aiVisionStatusBadge" class="bg-emerald-900/60 text-emerald-300 border border-emerald-700/50 text-[10px] px-1.5 py-0.2 rounded font-mono">Sẵn sàng</span>
-                </button>
-
-                <!-- Usage Progress Bar (RPD / Quota) -->
-                <div id="aiUsageContainer" class="flex items-center gap-2 pl-2 border-l border-slate-600/80 pr-1.5 cursor-pointer" title="Hạn ngạch API Key miễn phí (1500 req/ngày, 15 req/phút). Nhấp để xem chi tiết.">
-                    <div class="flex flex-col gap-0.5">
-                        <div class="flex items-center justify-between text-[10px] font-mono leading-none gap-2">
-                            <span class="text-slate-400">Usage:</span>
-                            <span id="aiUsagePercentText" class="text-purple-300 font-semibold">0%</span>
-                        </div>
-                        <div class="w-16 h-1.5 bg-slate-800 rounded-full overflow-hidden border border-slate-600/60">
-                            <div id="aiUsageProgressBar" class="h-full bg-gradient-to-r from-purple-500 to-indigo-400 rounded-full transition-all duration-500" style="width: 0%;"></div>
-                        </div>
-                    </div>
-                    <span id="aiUsageReqText" class="text-[10px] font-mono text-slate-400" title="Đã dùng / Giới hạn ngày">0/1500</span>
-                </div>
-            </div>
-
-            <!-- Upload Button -->
-            <label class="bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium px-3 py-2 rounded-lg flex items-center gap-1.5 cursor-pointer shadow-md shadow-blue-600/20 transition">
-                <i class="fa-solid fa-upload"></i>
-                <span>Tải PDF Bản Vẽ</span>
+            <!-- Nút Tải PDF Bản Vẽ -->
+            <label class="bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg flex items-center gap-1.5 cursor-pointer shadow-sm shadow-blue-600/30 transition">
+                <i class="fa-solid fa-upload text-xs"></i>
+                <span>Tải PDF</span>
                 <input type="file" id="pdfFileInput" accept=".pdf" class="hidden">
             </label>
 
-            <!-- Export Buttons -->
-            <button id="exportExcelBtn" class="bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-medium px-3 py-2 rounded-lg flex items-center gap-1.5 shadow-md shadow-emerald-700/20 transition disabled:opacity-50 disabled:cursor-not-allowed" disabled>
-                <i class="fa-solid fa-file-excel"></i>
-                <span>Xuất Excel</span>
-            </button>
-            <button id="exportCsvBtn" class="bg-slate-700 hover:bg-slate-600 text-slate-200 border border-slate-600 text-xs font-medium px-2.5 py-2 rounded-lg flex items-center gap-1 transition disabled:opacity-50 disabled:cursor-not-allowed" disabled title="Xuất CSV">
-                <i class="fa-solid fa-file-csv text-slate-400"></i>
+            <!-- Dropdown Xuất Dữ Liệu -->
+            <div class="relative">
+                <button id="exportDropdownBtn" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition">
+                    <i class="fa-solid fa-file-export text-emerald-400"></i>
+                    <span>Xuất</span>
+                    <i class="fa-solid fa-chevron-down text-[10px] text-slate-400"></i>
+                </button>
+                <div id="exportMenu" class="hidden absolute right-0 mt-1 w-36 bg-slate-850 border border-slate-700 rounded-lg shadow-xl py-1 z-40 text-xs backdrop-blur-md">
+                    <button id="exportExcelBtn" class="w-full text-left px-3 py-1.5 hover:bg-slate-800 text-slate-200 flex items-center gap-2 transition disabled:opacity-50" disabled>
+                        <i class="fa-solid fa-file-excel text-emerald-400 w-4"></i>
+                        <span>File Excel (.xlsx)</span>
+                    </button>
+                    <button id="exportCsvBtn" class="w-full text-left px-3 py-1.5 hover:bg-slate-800 text-slate-200 flex items-center gap-2 transition disabled:opacity-50" disabled>
+                        <i class="fa-solid fa-file-csv text-blue-400 w-4"></i>
+                        <span>File CSV (.csv)</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Nút Cài Đặt Chung Hợp Nhất -->
+            <button id="openUnifiedSettingsBtn" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition" title="Mở Cài đặt hệ thống (AI Vision, Dung sai chung, Bộ nhớ AI)">
+                <i class="fa-solid fa-gear text-slate-400"></i>
+                <span>Cài đặt</span>
+                <span id="headerSettingsDot" class="w-2 h-2 rounded-full bg-emerald-400 ml-0.5"></span>
             </button>
         </div>
     </header>
@@ -98,56 +79,76 @@
         <!-- LEFT PANEL: INTERACTIVE CANVAS -->
         <section class="flex-1 relative bg-slate-950 flex flex-col border-r border-slate-800 overflow-hidden">
             
-            <!-- Canvas Floating Controls -->
-            <div class="absolute top-3 left-3 z-10 flex items-center bg-slate-800/90 backdrop-blur border border-slate-700 rounded-lg p-1 space-x-1 shadow-lg">
-                <button id="zoomInBtn" class="p-1.5 text-slate-300 hover:text-white hover:bg-slate-700 rounded transition" title="Phóng to (Cuộn chuột lên)">
-                    <i class="fa-solid fa-magnifying-glass-plus"></i>
+            <!-- Canvas Floating CAD Dock (Gọn gàng & Hiện đại) -->
+            <div class="absolute top-3 left-3 z-20 flex items-center glass-dock rounded-xl p-1 space-x-1">
+                <!-- Group Zoom -->
+                <button id="zoomOutBtn" class="p-1.5 text-slate-300 hover:text-white hover:bg-slate-800/80 rounded-lg transition" title="Thu nhỏ (Cuộn chuột xuống)">
+                    <i class="fa-solid fa-minus text-xs"></i>
                 </button>
-                <button id="zoomOutBtn" class="p-1.5 text-slate-300 hover:text-white hover:bg-slate-700 rounded transition" title="Thu nhỏ (Cuộn chuột xuống)">
-                    <i class="fa-solid fa-magnifying-glass-minus"></i>
+                <span id="zoomLevelText" class="text-xs font-mono text-cyan-300 px-1 min-w-[42px] text-center font-medium">100%</span>
+                <button id="zoomInBtn" class="p-1.5 text-slate-300 hover:text-white hover:bg-slate-800/80 rounded-lg transition" title="Phóng to (Cuộn chuột lên)">
+                    <i class="fa-solid fa-plus text-xs"></i>
                 </button>
-                <span id="zoomLevelText" class="text-xs font-mono text-slate-400 px-1 min-w-[45px] text-center">100%</span>
-                <button id="fitScreenBtn" class="p-1.5 text-slate-300 hover:text-white hover:bg-slate-700 rounded transition" title="Vừa khung hình">
-                    <i class="fa-solid fa-expand"></i>
+                <button id="fitScreenBtn" class="p-1.5 text-slate-300 hover:text-white hover:bg-slate-800/80 rounded-lg transition" title="Vừa khung hình (Fit)">
+                    <i class="fa-solid fa-expand text-xs"></i>
                 </button>
-                <button id="resetZoomBtn" class="p-1.5 text-slate-300 hover:text-white hover:bg-slate-700 rounded transition" title="Khôi phục gốc (1:1)">
-                    <i class="fa-solid fa-rotate-left"></i>
+                <button id="resetZoomBtn" class="p-1.5 text-slate-300 hover:text-white hover:bg-slate-800/80 rounded-lg transition" title="Khôi phục gốc (1:1)">
+                    <i class="fa-solid fa-rotate-left text-xs"></i>
                 </button>
-                <span class="w-px h-4 bg-slate-700 mx-0.5"></span>
-                <button id="panToolBtn" class="p-1.5 text-slate-300 hover:text-white hover:bg-slate-700 rounded transition" title="Chế độ Pan di chuyển bản vẽ (Phím H hoặc Giữ Ctrl)">
-                    <i class="fa-solid fa-hand"></i>
+                
+                <span class="w-px h-4 bg-slate-700/80 mx-1"></span>
+                
+                <!-- Tool Pan -->
+                <button id="panToolBtn" class="p-1.5 text-slate-300 hover:text-white hover:bg-slate-800/80 rounded-lg transition" title="Chế độ Pan di chuyển bản vẽ (Phím H hoặc Giữ Ctrl)">
+                    <i class="fa-solid fa-hand text-xs"></i>
                 </button>
-                <span class="w-px h-4 bg-slate-700 mx-0.5"></span>
-                <!-- Rotate PDF Button -->
-                <button id="rotatePdfBtn" class="p-1.5 text-slate-300 hover:text-white hover:bg-slate-700 rounded transition flex items-center gap-1" title="Xoay trang bản vẽ PDF 90° (Theo chiều kim đồng hồ)">
-                    <i class="fa-solid fa-arrows-rotate"></i>
-                    <span class="text-[11px] font-medium hidden sm:inline">PDF</span>
-                    <span id="pageRotationText" class="text-[10px] font-mono text-blue-400 font-bold">0°</span>
-                </button>
-                <!-- Rotate Crop Button -->
-                <button id="rotateCropBtn" class="p-1.5 text-slate-300 hover:text-white hover:bg-slate-700 rounded transition flex items-center gap-1" title="Góc xoay vùng crop khi OCR (Xoay kích thước chữ dọc sang ngang: 0°, 90°, 180°, 270°)">
-                    <i class="fa-solid fa-crop-simple"></i>
-                    <span class="text-[11px] font-medium hidden sm:inline">Crop</span>
-                    <span id="cropRotationText" class="text-[10px] font-mono text-cyan-400 font-bold">0°</span>
-                </button>
-                <span class="w-px h-4 bg-slate-700 mx-0.5"></span>
-                <!-- AI Auto-Scan Button -->
-                <button id="aiAutoScanBtn" class="px-2.5 py-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded font-medium text-[11px] flex items-center gap-1.5 shadow-md shadow-purple-600/30 transition" title="Dùng AI Vision quét toàn bộ trang bản vẽ để tự động phát hiện tất cả các kích thước">
-                    <i class="fa-solid fa-wand-magic-sparkles text-amber-300"></i>
-                    <span>AI Auto-Scan</span>
+                
+                <span class="w-px h-4 bg-slate-700/80 mx-1"></span>
+
+                <!-- Menu Xoay Dropdown (Xoay PDF / Xoay Crop) -->
+                <div class="relative">
+                    <button id="rotateMenuBtn" class="p-1.5 text-slate-300 hover:text-white hover:bg-slate-800/80 rounded-lg transition flex items-center gap-1 text-xs" title="Tùy chọn góc xoay bản vẽ & ô crop">
+                        <i class="fa-solid fa-arrows-rotate text-blue-400 text-xs"></i>
+                        <span id="dockRotationIndicator" class="font-mono text-[10px] text-slate-400 font-bold">0°</span>
+                        <i class="fa-solid fa-chevron-down text-[9px] text-slate-500"></i>
+                    </button>
+                    <div id="rotateSubMenu" class="hidden absolute left-0 mt-1.5 w-48 bg-slate-900 border border-slate-700 rounded-lg shadow-2xl p-1.5 z-30 space-y-1 text-xs backdrop-blur-md">
+                        <button id="rotatePdfBtn" class="w-full flex items-center justify-between px-2 py-1.5 text-slate-300 hover:bg-slate-800 hover:text-white rounded transition">
+                            <span class="flex items-center gap-1.5"><i class="fa-solid fa-file-pdf text-blue-400"></i> Xoay trang PDF</span>
+                            <span id="pageRotationText" class="font-mono text-cyan-400 font-bold text-[11px]">0°</span>
+                        </button>
+                        <button id="rotateCropBtn" class="w-full flex items-center justify-between px-2 py-1.5 text-slate-300 hover:bg-slate-800 hover:text-white rounded transition">
+                            <span class="flex items-center gap-1.5"><i class="fa-solid fa-crop-simple text-amber-400"></i> Xoay góc Crop</span>
+                            <span id="cropRotationText" class="font-mono text-amber-400 font-bold text-[11px]">0°</span>
+                        </button>
+                    </div>
+                </div>
+
+                <span class="w-px h-4 bg-slate-700/80 mx-1"></span>
+
+                <!-- Nút AI Auto-Scan Nổi Bật -->
+                <button id="aiAutoScanBtn" class="px-2.5 py-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-lg font-medium text-xs flex items-center gap-1.5 shadow-md shadow-purple-600/30 transition" title="Dùng AI Vision quét toàn bộ trang bản vẽ để tự động phát hiện tất cả kích thước">
+                    <i class="fa-solid fa-wand-magic-sparkles text-amber-300 text-xs"></i>
+                    <span class="hidden sm:inline">AI Auto-Scan</span>
                 </button>
             </div>
 
-            <!-- Hint Tooltip -->
-            <div class="absolute top-3 right-3 z-10 bg-slate-800/80 backdrop-blur border border-slate-700/60 rounded px-2.5 py-1 text-[11px] text-slate-400 flex items-center gap-2 pointer-events-none">
-                <span><span class="text-blue-400 font-semibold">Chuột trái:</span> Kéo ô crop</span>
-                <span>•</span>
-                <span><span class="text-blue-400 font-semibold">Nút Pan / Giữ Ctrl:</span> Di chuyển (Pan)</span>
-                <span>•</span>
-                <span><span class="text-blue-400 font-semibold">Lăn chuột:</span> Zoom</span>
+            <!-- Hint Tooltip (Nút trợ giúp gọn gàng góc phải) -->
+            <div class="absolute top-3 right-3 z-20 group">
+                <button class="w-7 h-7 rounded-full bg-slate-800/80 border border-slate-700/70 text-slate-400 hover:text-white flex items-center justify-center text-xs shadow-md transition">
+                    <i class="fa-solid fa-question"></i>
+                </button>
+                <div class="hidden group-hover:block absolute right-0 mt-1 w-64 p-2.5 bg-slate-900 border border-slate-700/80 rounded-lg shadow-xl text-[11px] text-slate-300 space-y-1.5 backdrop-blur-md pointer-events-none">
+                    <div class="font-semibold text-white border-b border-slate-800 pb-1">Thao tác bản vẽ:</div>
+                    <div><span class="text-blue-400 font-semibold">Chuột trái:</span> Kéo ô crop khoanh kích thước</div>
+                    <div><span class="text-cyan-400 font-semibold">Chọn Box:</span> Bấm vào viền để kéo di chuyển hoặc co giãn 8 nút</div>
+                    <div><span class="text-indigo-400 font-semibold">Giữ Ctrl / Phím Space:</span> Pan di chuyển bản vẽ</div>
+                    <div><span class="text-amber-400 font-semibold">Cuộn chuột:</span> Phóng to / thu nhỏ</div>
+                    <div><span class="text-red-400 font-semibold">Phím Del:</span> Xóa box đang chọn</div>
+                </div>
             </div>
 
-            <!-- Canvas Wrapper -->
+            <!-- Canvas Viewport -->
             <div id="canvasViewport" class="flex-1 w-full h-full relative overflow-hidden cursor-crosshair">
                 <canvas id="mainCanvas" class="absolute top-0 left-0"></canvas>
                 
@@ -157,7 +158,7 @@
                         <i class="fa-solid fa-file-pdf text-3xl"></i>
                     </div>
                     <h3 class="text-base font-semibold text-slate-200 mb-1">Chưa có bản vẽ nào được mở</h3>
-                    <p class="text-xs text-slate-400 max-w-sm mb-4">Nhấn nút "Tải PDF Bản Vẽ" ở trên hoặc kéo thả file bản vẽ kỹ thuật (.pdf) vào vùng này</p>
+                    <p class="text-xs text-slate-400 max-w-sm mb-4">Nhấn nút "Tải PDF" ở trên hoặc kéo thả file bản vẽ kỹ thuật (.pdf) vào vùng này</p>
                     <label class="bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium px-4 py-2 rounded-lg cursor-pointer transition shadow-lg shadow-blue-600/20">
                         <span>Chọn file từ máy tính</span>
                         <input type="file" id="pdfFileInput2" accept=".pdf" class="hidden">
@@ -165,7 +166,7 @@
                 </div>
 
                 <!-- Processing Spinner Overlay -->
-                <div id="loadingOverlay" class="hidden absolute inset-0 bg-slate-950/70 backdrop-blur-sm flex flex-col items-center justify-center z-20">
+                <div id="loadingOverlay" class="hidden absolute inset-0 bg-slate-950/70 backdrop-blur-sm flex flex-col items-center justify-center z-30">
                     <div class="w-10 h-10 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin mb-3"></div>
                     <p id="loadingText" class="text-xs font-medium text-slate-200">Đang quét OCR & bóc tách dung sai...</p>
                 </div>
@@ -173,134 +174,335 @@
 
         </section>
 
-        <!-- RIGHT PANEL: RESULTS TABLE -->
-        <section class="w-[620px] bg-slate-900 flex flex-col flex-shrink-0 overflow-hidden border-l border-slate-800">
+        <!-- RIGHT PANEL: RESULTS TABLE (TỐI ƯU GIAO DIỆN & TÌM KIẾM) -->
+        <section class="w-[580px] bg-slate-900 flex flex-col flex-shrink-0 overflow-hidden border-l border-slate-800">
             
-            <!-- Table Header -->
-            <div class="p-3 bg-slate-800/80 border-b border-slate-700 flex items-center justify-between">
-                <div class="flex items-center space-x-2">
-                    <h2 class="text-xs font-bold text-slate-200 uppercase tracking-wider">Danh Sách Kích Thước & Dung Sai</h2>
-                    <span id="itemCountBadge" class="bg-blue-900/60 text-blue-300 border border-blue-700/50 text-[10px] font-mono px-2 py-0.5 rounded-full">0 mục</span>
+            <!-- Table Header Bar -->
+            <div class="p-2.5 bg-slate-850 border-b border-slate-800 flex items-center justify-between gap-2">
+                <div class="flex items-center space-x-2 shrink-0">
+                    <h2 class="text-xs font-bold text-slate-200 uppercase tracking-wider">Kích Thước</h2>
+                    <span id="itemCountBadge" class="bg-blue-900/50 text-blue-300 border border-blue-700/50 text-[10px] font-mono px-2 py-0.5 rounded-full">0 mục</span>
                 </div>
-                <div class="flex items-center space-x-2">
-                    <button id="scrollToBottomBtn" class="text-slate-400 hover:text-cyan-300 text-xs px-2 py-1 rounded transition border border-slate-700/80 hover:border-cyan-500/50 flex items-center gap-1" title="Cuộn xuống kết quả mới nhất">
-                        <i class="fa-solid fa-arrow-down text-[10px]"></i>
-                        <span>Xuống cuối</span>
+
+                <!-- Thanh Tìm Kiếm / Lọc Nhanh -->
+                <div class="relative flex-1 max-w-[200px]">
+                    <i class="fa-solid fa-magnifying-glass text-[10px] text-slate-500 absolute left-2.5 top-2"></i>
+                    <input type="text" id="tableSearchInput" placeholder="Lọc kích thước..." class="w-full bg-slate-900 border border-slate-700/80 rounded-md pl-7 pr-2 py-1 text-[11px] text-slate-200 focus:outline-none focus:border-cyan-500 font-mono">
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="flex items-center space-x-1 shrink-0">
+                    <button id="scrollToBottomBtn" class="text-slate-400 hover:text-cyan-300 text-xs p-1.5 rounded transition border border-slate-800 hover:border-slate-700" title="Cuộn xuống cuối">
+                        <i class="fa-solid fa-arrow-down text-xs"></i>
                     </button>
-                    <button id="clearAllBtn" class="text-slate-400 hover:text-red-400 text-xs px-2 py-1 rounded transition" title="Xóa toàn bộ">
-                        <i class="fa-solid fa-trash-can mr-1"></i>Xóa hết
+                    <button id="clearAllBtn" class="text-slate-400 hover:text-red-400 text-xs p-1.5 rounded transition border border-slate-800 hover:border-slate-700" title="Xóa toàn bộ">
+                        <i class="fa-solid fa-trash-can text-xs"></i>
                     </button>
                 </div>
             </div>
 
             <!-- Table Container -->
-            <div id="tableScrollContainer" class="flex-1 overflow-y-auto overflow-x-auto p-2 scroll-smooth">
-                <table class="w-full text-left border-collapse min-w-[540px]">
+            <div id="tableScrollContainer" class="flex-1 overflow-y-auto overflow-x-auto p-1.5 scroll-smooth">
+                <table class="w-full text-left border-collapse min-w-[500px]">
                     <thead>
-                        <tr class="text-[11px] font-semibold text-slate-400 border-b border-slate-800 pb-2">
-                            <th class="py-1.5 px-2 w-8 text-center">#</th>
-                            <th class="py-1.5 px-2 w-14 text-center">Ảnh cắt</th>
-                            <th class="py-1.5 px-2 w-28">Raw OCR</th>
-                            <th class="py-1.5 px-2 w-24">Nominal</th>
-                            <th class="py-1.5 px-2 w-24 text-center">Dung sai (+/-)</th>
-                            <th class="py-1.5 px-2 w-32">Parse (Callout)</th>
-                            <th class="py-1.5 px-2 w-14 text-center">Thao tác</th>
+                        <tr class="text-[11px] font-semibold text-slate-400 border-b border-slate-800 pb-1.5">
+                            <th class="py-1 px-1.5 w-7 text-center">#</th>
+                            <th class="py-1 px-1.5 w-12 text-center">Ảnh</th>
+                            <th class="py-1 px-2 w-24">Nominal</th>
+                            <th class="py-1 px-2 w-20 text-center">Dung sai</th>
+                            <th class="py-1 px-2 w-32">Callout (Đầy đủ)</th>
+                            <th class="py-1 px-1.5 w-16 text-center">Tác vụ</th>
                         </tr>
                     </thead>
-                    <tbody id="resultsTableBody" class="divide-y divide-slate-800/60 text-xs">
+                    <tbody id="resultsTableBody" class="divide-y divide-slate-800/40 text-xs">
                         <!-- Rows injected by JavaScript -->
                     </tbody>
                 </table>
 
-                <div id="tableEmptyState" class="py-16 text-center text-slate-500">
+                <div id="tableEmptyState" class="py-20 text-center text-slate-500">
                     <i class="fa-solid fa-crop-simple text-3xl mb-2 text-slate-600"></i>
-                    <p class="text-xs">Dùng chuột trái khoanh vùng kích thước trên bản vẽ để bóc tách tự động</p>
+                    <p class="text-xs">Khoanh ô crop trên bản vẽ để trích xuất kích thước</p>
                 </div>
             </div>
 
             <!-- Footer Quick Info -->
-            <div class="bg-slate-800/50 border-t border-slate-800 px-3 py-2 text-[11px] text-slate-400 flex items-center justify-between">
-                <span>Nhấp đúp vào ô để sửa trực tiếp</span>
-                <span class="text-slate-500 font-mono">Quy tắc: Nominal > Tol</span>
+            <div class="bg-slate-900 border-t border-slate-800/80 px-3 py-1.5 text-[11px] text-slate-400 flex items-center justify-between">
+                <span>Nhấp đúp vào ô để sửa • Enter lưu</span>
+                <span class="text-slate-500 font-mono text-[10px]" id="tableHintStatus">Quy tắc: Nominal > Tol</span>
             </div>
 
         </section>
 
     </main>
 
-    <!-- GLOBAL CONSTRAINTS MODAL -->
-    <div id="constraintsModal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-        <div class="bg-slate-800 border border-slate-700 rounded-xl w-full max-w-md overflow-hidden shadow-2xl">
-            <div class="px-4 py-3 bg-slate-750 border-b border-slate-700 flex items-center justify-between">
-                <h3 class="text-sm font-bold text-white flex items-center gap-2">
-                    <i class="fa-solid fa-sliders text-blue-400"></i>
-                    Cấu Hình Dung Sai Chung (Global Constraints)
-                </h3>
-                <button id="closeConstraintsBtn" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+    <!-- FOOTER STATUS BAR (PHONG CÁCH VS CODE / CAD) -->
+    <footer class="h-6 bg-slate-900 border-t border-slate-800/80 px-3 flex items-center justify-between text-[11px] text-slate-400 z-30 select-none">
+        <div class="flex items-center space-x-3">
+            <span class="flex items-center gap-1.5 cursor-pointer" id="footerAiModelTrigger" title="Nhấp để cấu hình Model AI">
+                <span id="footerAiDot" class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                <span id="footerAiModelText" class="font-medium text-slate-300">Gemini Flash</span>
+            </span>
+            <span class="text-slate-700">|</span>
+            <span id="footerRotationStatus" class="font-mono text-slate-400">PDF: 0° • Crop: 0°</span>
+            <span class="text-slate-700">|</span>
+            <span id="footerTolRuleSummary" class="text-blue-400 font-mono cursor-pointer hover:underline" title="Quy tắc dung sai chung">Dung sai: Thập phân</span>
+        </div>
+
+        <div class="flex items-center space-x-3">
+            <!-- Footer Mini Usage Bar -->
+            <div id="footerUsageTrigger" class="flex items-center gap-2 hover:bg-slate-800 px-2 py-0.5 rounded cursor-pointer transition" title="Nhấp để xem chi tiết Hạn ngạch API & Quota">
+                <span class="text-slate-400 font-mono text-[10px]">RPD:</span>
+                <div class="w-16 h-1.5 bg-slate-800 rounded-full overflow-hidden border border-slate-700">
+                    <div id="aiUsageProgressBar" class="h-full bg-gradient-to-r from-purple-500 to-indigo-400 rounded-full transition-all duration-500" style="width: 0%;"></div>
+                </div>
+                <span id="aiUsagePercentText" class="text-purple-300 font-mono font-semibold text-[10px]">0%</span>
+                <span id="aiUsageReqText" class="text-slate-500 font-mono text-[10px] hidden sm:inline">(0/1500)</span>
             </div>
-            <div class="p-4 space-y-4 text-xs">
-                <p class="text-slate-400">Quy tắc dung sai áp dụng tự động cho các kích thước <span class="text-slate-200 font-semibold">không ghi dung sai riêng</span> trên bản vẽ.</p>
+        </div>
+    </footer>
+
+    <!-- ========================================================================= -->
+    <!-- UNIFIED SETTINGS MODAL (CỬA SỔ CÀI ĐẶT HỢP NHẤT 3 TAB)                   -->
+    <!-- ========================================================================= -->
+    <div id="unifiedSettingsModal" class="hidden fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+            
+            <!-- Modal Header with Title and Close button -->
+            <div class="px-5 py-3.5 bg-slate-850 border-b border-slate-800 flex items-center justify-between">
+                <div class="flex items-center space-x-3">
+                    <i class="fa-solid fa-sliders text-cyan-400 text-sm"></i>
+                    <h3 class="font-bold text-sm text-white">Trung Tâm Cài Đặt Hệ Thống</h3>
+                </div>
+                <button id="closeUnifiedSettingsBtn" class="text-slate-400 hover:text-white transition"><i class="fa-solid fa-xmark text-base"></i></button>
+            </div>
+
+            <!-- Tab Navigation Header -->
+            <div class="flex border-b border-slate-800 bg-slate-900 px-4 pt-2 gap-2 text-xs font-medium">
+                <button class="settings-tab-btn active px-4 py-2 rounded-t-lg border-b-2 border-blue-500 text-blue-400 bg-blue-500/10 transition flex items-center gap-1.5" data-tab="tab-ai-vision">
+                    <i class="fa-solid fa-eye text-purple-400"></i>
+                    <span>AI Vision & Quota</span>
+                </button>
+                <button class="settings-tab-btn px-4 py-2 rounded-t-lg border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition flex items-center gap-1.5" data-tab="tab-constraints">
+                    <i class="fa-solid fa-ruler-combined text-blue-400"></i>
+                    <span>Dung Sai Chung</span>
+                    <span id="globalSummaryBadge" class="bg-blue-900/60 text-blue-300 border border-blue-700/50 text-[10px] px-1.5 py-0.2 rounded font-mono">Thập phân</span>
+                </button>
+                <button class="settings-tab-btn px-4 py-2 rounded-t-lg border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition flex items-center gap-1.5" data-tab="tab-adaptive">
+                    <i class="fa-solid fa-brain text-amber-400"></i>
+                    <span>Bộ Nhớ AI Học</span>
+                    <span id="adaptiveCountBadge" class="bg-amber-900/60 text-amber-300 text-[10px] px-1.5 py-0.2 rounded font-mono">0 quy tắc</span>
+                </button>
+            </div>
+
+            <!-- Tab Contents Container -->
+            <div class="p-5 overflow-y-auto flex-1 space-y-4 text-xs">
                 
-                <!-- Mode Selection -->
-                <div class="space-y-2">
-                    <label class="flex items-center space-x-2 cursor-pointer">
-                        <input type="radio" name="gcMode" value="decimals" checked class="text-blue-600 focus:ring-0">
-                        <span class="text-slate-200 font-medium">Theo số chữ số thập phân (Decimals Rule - Khuyên dùng)</span>
-                    </label>
-                    <div id="decimalsSettings" class="ml-6 grid grid-cols-2 gap-2 bg-slate-900/60 p-2.5 rounded-lg border border-slate-700/60">
-                        <div class="flex items-center justify-between">
-                            <span class="text-slate-400 font-mono">0 (Nguyên X):</span>
-                            <input type="number" step="0.01" id="dec0" value="0.2" class="w-16 bg-slate-800 border border-slate-600 rounded px-1.5 py-0.5 text-right font-mono text-slate-200">
-                        </div>
-                        <div class="flex items-center justify-between">
-                            <span class="text-slate-400 font-mono">0.0 (1 số lẻ):</span>
-                            <input type="number" step="0.01" id="dec1" value="0.1" class="w-16 bg-slate-800 border border-slate-600 rounded px-1.5 py-0.5 text-right font-mono text-slate-200">
-                        </div>
-                        <div class="flex items-center justify-between">
-                            <span class="text-slate-400 font-mono">0.00 (2 số lẻ):</span>
-                            <input type="number" step="0.01" id="dec2" value="0.05" class="w-16 bg-slate-800 border border-slate-600 rounded px-1.5 py-0.5 text-right font-mono text-slate-200">
-                        </div>
-                        <div class="flex items-center justify-between">
-                            <span class="text-slate-400 font-mono">0.000 (3 số lẻ):</span>
-                            <input type="number" step="0.001" id="dec3" value="0.01" class="w-16 bg-slate-800 border border-slate-600 rounded px-1.5 py-0.5 text-right font-mono text-slate-200">
-                        </div>
-                        <div class="flex items-center justify-between">
-                            <span class="text-slate-400 font-mono">0.0000 (4 số lẻ):</span>
-                            <input type="number" step="0.0005" id="dec4" value="0.005" class="w-16 bg-slate-800 border border-slate-600 rounded px-1.5 py-0.5 text-right font-mono text-slate-200">
-                        </div>
-                        <div class="flex items-center justify-between">
-                            <span class="text-slate-400 font-mono">0.00000 (5 số lẻ):</span>
-                            <input type="number" step="0.0001" id="dec5" value="0.001" class="w-16 bg-slate-800 border border-slate-600 rounded px-1.5 py-0.5 text-right font-mono text-slate-200">
+                <!-- TAB 1: AI VISION & QUOTA -->
+                <div id="tab-ai-vision" class="tab-pane space-y-4">
+                    <!-- API Key -->
+                    <div class="space-y-1.5">
+                        <label class="text-slate-200 font-semibold block flex items-center justify-between">
+                            <span>Google Gemini API Key:</span>
+                            <a href="https://aistudio.google.com/app/apikey" target="_blank" class="text-purple-400 hover:underline text-[11px] flex items-center gap-1">
+                                <span>Lấy Key Free từ Google</span>
+                                <i class="fa-solid fa-arrow-up-right-from-square text-[9px]"></i>
+                            </a>
+                        </label>
+                        <div class="relative">
+                            <input type="password" id="aiApiKeyInput" placeholder="Nhập API Key (AQ... hoặc AIzaSy...)" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 font-mono text-xs focus:border-purple-500 focus:outline-none">
+                            <button id="toggleAiKeyVisBtn" type="button" class="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-200">
+                                <i class="fa-solid fa-eye text-xs"></i>
+                            </button>
                         </div>
                     </div>
 
-                    <label class="flex items-center space-x-2 cursor-pointer pt-2">
-                        <input type="radio" name="gcMode" value="fixed" class="text-blue-600 focus:ring-0">
-                        <span class="text-slate-200 font-medium">Giá trị cố định cho tất cả (Fixed Value)</span>
-                    </label>
-                    <div id="fixedSettings" class="ml-6 flex items-center gap-2">
-                        <span class="text-slate-400">± Dung sai:</span>
-                        <input type="number" step="0.01" id="fixedVal" value="0.1" class="w-20 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-slate-200 font-mono text-sm">
-                        <span class="text-slate-400">mm</span>
+                    <!-- Model & Tier Selection -->
+                    <div class="grid grid-cols-2 gap-3">
+                        <div class="space-y-1.5">
+                            <label class="text-slate-200 font-semibold block">Mô hình AI Vision:</label>
+                            <select id="aiModelSelect" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-2 text-slate-100 text-xs focus:border-purple-500 focus:outline-none">
+                                <option value="gemini-flash-latest">Gemini Flash (Khuyên dùng - Siêu nhanh)</option>
+                                <option value="gemini-3.8-flash">Gemini 3.8 Flash</option>
+                                <option value="gemini-3.7-flash">Gemini 3.7 Flash</option>
+                                <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash-Lite</option>
+                                <option value="gemini-pro-latest">Gemini Pro (Suy luận sâu)</option>
+                            </select>
+                        </div>
+                        <div class="space-y-1.5">
+                            <label class="text-slate-200 font-semibold block">Gói dịch vụ (Billing Tier):</label>
+                            <select id="aiBillingTierSelect" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-2 text-slate-100 text-xs focus:border-purple-500 focus:outline-none">
+                                <option value="free">Gói Miễn Phí (Free Tier - 1,500 req/ngày)</option>
+                                <option value="paid">Gói Trả Phí (Pay-as-you-go)</option>
+                            </select>
+                        </div>
                     </div>
 
-                    <label class="flex items-center space-x-2 cursor-pointer pt-2">
-                        <input type="radio" name="gcMode" value="iso2768" class="text-blue-600 focus:ring-0">
-                        <span class="text-slate-200 font-medium">Theo tiêu chuẩn ISO 2768 (Gia công cơ khí)</span>
-                    </label>
-                    <div id="isoSettings" class="ml-6">
-                        <select id="isoLevel" class="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-slate-200 font-medium text-xs">
-                            <option value="iso2768_m">ISO 2768-m (Trung bình - Medium)</option>
-                            <option value="iso2768_f">ISO 2768-f (Tinh - Fine)</option>
-                            <option value="iso2768_c">ISO 2768-c (Thô - Coarse)</option>
-                        </select>
+                    <!-- Custom Quota Limit (for Paid Tier) -->
+                    <div id="customQuotaContainer" class="hidden p-2.5 bg-indigo-950/40 rounded-lg border border-indigo-700/50 space-y-1">
+                        <div class="flex items-center justify-between">
+                            <label class="text-slate-200 font-semibold text-[11px]">Hạn mức ngân sách ngày (Request Limit):</label>
+                            <span class="text-[10px] text-indigo-300 font-mono">Đặt 0 để dùng mặc định (10,000)</span>
+                        </div>
+                        <input type="number" id="customRpdInput" min="100" max="1000000" step="500" placeholder="VD: 5000 (lượt/ngày)" class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-100 font-mono focus:border-purple-500 focus:outline-none">
+                    </div>
+
+                    <!-- Status indicator -->
+                    <div id="aiStatusBox" class="p-2.5 bg-slate-950 rounded-lg border border-slate-800 flex items-center gap-2.5">
+                        <div id="aiStatusDot" class="w-2.5 h-2.5 rounded-full bg-emerald-400 shrink-0"></div>
+                        <span id="aiStatusDetail" class="text-slate-300 text-[11px]">Đang kiểm tra trạng thái...</span>
+                    </div>
+
+                    <!-- Detailed Usage Stats Card -->
+                    <div class="p-3 bg-slate-950 rounded-xl border border-purple-500/30 space-y-2.5">
+                        <div class="flex items-center justify-between">
+                            <span class="font-semibold text-slate-200 flex items-center gap-1.5">
+                                <i class="fa-solid fa-chart-pie text-purple-400"></i>
+                                <span>Thống Kê Lượt Dùng Thực Tế (Usage)</span>
+                            </span>
+                            <span id="aiModalPercentBadge" class="bg-purple-900/60 text-purple-300 border border-purple-600/60 text-[10px] font-mono px-1.5 py-0.5 rounded">0.0% used</span>
+                        </div>
+
+                        <!-- Requests Per Day Bar -->
+                        <div>
+                            <div class="flex justify-between text-[11px] text-slate-400 mb-1 font-mono">
+                                <span>Lượt gọi trong ngày (RPD):</span>
+                                <span id="aiModalRpdText" class="text-slate-200 font-semibold">0 / 1500 req</span>
+                            </div>
+                            <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden border border-slate-700">
+                                <div id="aiModalRpdBar" class="h-full bg-purple-500 rounded-full transition-all duration-500" style="width: 0%;"></div>
+                            </div>
+                        </div>
+
+                        <!-- Requests Per Minute Bar -->
+                        <div>
+                            <div class="flex justify-between text-[11px] text-slate-400 mb-1 font-mono">
+                                <span>Tốc độ trong phút (RPM):</span>
+                                <span id="aiModalRpmText" class="text-slate-200 font-semibold">0 / 15 req/phút</span>
+                            </div>
+                            <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden border border-slate-700">
+                                <div id="aiModalRpmBar" class="h-full bg-indigo-500 rounded-full transition-all duration-500" style="width: 0%;"></div>
+                            </div>
+                        </div>
+
+                        <div class="pt-1.5 border-t border-slate-800/80 flex justify-between items-center text-[10px] text-slate-400">
+                            <span>Tokens hôm nay: <span id="aiModalTokensText" class="text-cyan-300 font-mono font-semibold">0</span> <span id="aiModalCostText" class="text-slate-400 ml-1">($0.00)</span></span>
+                            <span id="aiModalTierBadge" class="text-emerald-400 font-medium flex items-center gap-1">
+                                <i class="fa-solid fa-circle-check"></i>
+                                <span>Gói Free Tier</span>
+                            </span>
+                        </div>
                     </div>
                 </div>
+
+                <!-- TAB 2: DUNG SAI CHUNG (GLOBAL CONSTRAINTS) -->
+                <div id="tab-constraints" class="tab-pane hidden space-y-4">
+                    <p class="text-slate-400">Quy tắc dung sai áp dụng tự động cho các kích thước <span class="text-slate-200 font-semibold">không ghi dung sai riêng</span> trên bản vẽ.</p>
+                    
+                    <div class="space-y-3">
+                        <label class="flex items-center space-x-2 cursor-pointer">
+                            <input type="radio" name="gcMode" value="decimals" checked class="text-blue-600 focus:ring-0">
+                            <span class="text-slate-200 font-medium">Theo số chữ số thập phân (Decimals Rule - Khuyên dùng)</span>
+                        </label>
+                        <div id="decimalsSettings" class="ml-6 grid grid-cols-2 gap-2.5 bg-slate-950 p-3 rounded-xl border border-slate-800">
+                            <div class="flex items-center justify-between">
+                                <span class="text-slate-400 font-mono">0 (Số nguyên X):</span>
+                                <input type="number" step="0.01" id="dec0" value="0.2" class="w-16 bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-right font-mono text-slate-200">
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="text-slate-400 font-mono">0.0 (1 số lẻ):</span>
+                                <input type="number" step="0.01" id="dec1" value="0.1" class="w-16 bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-right font-mono text-slate-200">
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="text-slate-400 font-mono">0.00 (2 số lẻ):</span>
+                                <input type="number" step="0.01" id="dec2" value="0.05" class="w-16 bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-right font-mono text-slate-200">
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="text-slate-400 font-mono">0.000 (3 số lẻ):</span>
+                                <input type="number" step="0.001" id="dec3" value="0.01" class="w-16 bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-right font-mono text-slate-200">
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="text-slate-400 font-mono">0.0000 (4 số lẻ):</span>
+                                <input type="number" step="0.0005" id="dec4" value="0.005" class="w-16 bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-right font-mono text-slate-200">
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="text-slate-400 font-mono">0.00000 (5 số lẻ):</span>
+                                <input type="number" step="0.0001" id="dec5" value="0.001" class="w-16 bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-right font-mono text-slate-200">
+                            </div>
+                        </div>
+
+                        <label class="flex items-center space-x-2 cursor-pointer pt-2">
+                            <input type="radio" name="gcMode" value="fixed" class="text-blue-600 focus:ring-0">
+                            <span class="text-slate-200 font-medium">Giá trị cố định cho tất cả (Fixed Value)</span>
+                        </label>
+                        <div id="fixedSettings" class="ml-6 flex items-center gap-2">
+                            <span class="text-slate-400">± Dung sai:</span>
+                            <input type="number" step="0.01" id="fixedVal" value="0.1" class="w-20 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-slate-200 font-mono text-xs">
+                            <span class="text-slate-400">mm</span>
+                        </div>
+
+                        <label class="flex items-center space-x-2 cursor-pointer pt-2">
+                            <input type="radio" name="gcMode" value="iso2768" class="text-blue-600 focus:ring-0">
+                            <span class="text-slate-200 font-medium">Theo tiêu chuẩn ISO 2768 (Gia công cơ khí)</span>
+                        </label>
+                        <div id="isoSettings" class="ml-6">
+                            <select id="isoLevel" class="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-slate-200 font-medium text-xs">
+                                <option value="iso2768_m">ISO 2768-m (Trung bình - Medium)</option>
+                                <option value="iso2768_f">ISO 2768-f (Tinh - Fine)</option>
+                                <option value="iso2768_c">ISO 2768-c (Thô - Coarse)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB 3: BỘ NHỚ AI HỌC THÍCH ỨNG -->
+                <div id="tab-adaptive" class="tab-pane hidden space-y-4">
+                    <p class="text-slate-400">
+                        Mỗi khi bạn chỉnh sửa bất kỳ ô nào trên bảng (Nominal, Dung sai, Callout), AI sẽ <strong class="text-amber-300">ghi nhớ ngay</strong> và tự động áp dụng chính xác cho các lần quét sau.
+                    </p>
+
+                    <div>
+                        <h4 class="font-bold text-slate-200 mb-2 flex items-center gap-1.5">
+                            <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                            Quy tắc 1-Shot (Ghi nhớ chính xác từ bạn sửa)
+                        </h4>
+                        <div id="exactRulesList" class="space-y-1.5 max-h-48 overflow-y-auto">
+                            <!-- Injected by JS -->
+                        </div>
+                    </div>
+
+                    <div>
+                        <h4 class="font-bold text-slate-200 mb-2 flex items-center gap-1.5">
+                            <span class="w-2 h-2 rounded-full bg-blue-400"></span>
+                            Quy tắc Tổng quát hóa (Generalized Patterns)
+                        </h4>
+                        <div id="genRulesList" class="space-y-1.5 max-h-48 overflow-y-auto">
+                            <!-- Injected by JS -->
+                        </div>
+                    </div>
+                </div>
+
             </div>
-            <div class="px-4 py-3 bg-slate-750 border-t border-slate-700 flex justify-end space-x-2">
-                <button id="cancelConstraintsBtn" class="px-3 py-1.5 rounded text-slate-300 hover:bg-slate-700 text-xs">Đóng</button>
-                <button id="saveConstraintsBtn" class="px-4 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow">Lưu & Áp Dụng</button>
+
+            <!-- Modal Footer -->
+            <div class="px-5 py-3 bg-slate-950 border-t border-slate-800 flex items-center justify-between">
+                <div class="flex items-center space-x-2">
+                    <button id="testAiKeyBtn" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center gap-1.5">
+                        <i class="fa-solid fa-plug text-cyan-400"></i>
+                        <span>Test API</span>
+                    </button>
+                    <button id="clearAiKeyBtn" class="text-slate-400 hover:text-red-400 border border-slate-800 hover:border-red-500/40 px-2.5 py-1.5 rounded-lg text-xs font-medium transition flex items-center gap-1" title="Gỡ bỏ API Key">
+                        <i class="fa-solid fa-trash-can"></i>
+                        <span>Gỡ Key</span>
+                    </button>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <button id="cancelUnifiedSettingsBtn" class="text-slate-400 hover:text-white px-3 py-1.5 text-xs">Đóng</button>
+                    <button id="saveAllSettingsBtn" class="bg-blue-600 hover:bg-blue-500 text-white font-medium px-4 py-1.5 rounded-lg text-xs transition shadow-md shadow-blue-600/30">
+                        Lưu & Áp Dụng
+                    </button>
+                </div>
             </div>
+
         </div>
     </div>
 
@@ -311,182 +513,9 @@
         </div>
     </div>
 
-    <!-- ADAPTIVE LEARNING RULES MODAL -->
-    <div id="adaptiveModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-        <div class="bg-slate-800 rounded-xl max-w-2xl w-full border border-slate-700 shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
-            <div class="px-5 py-3.5 bg-slate-750 border-b border-slate-700 flex items-center justify-between">
-                <div class="flex items-center space-x-2">
-                    <i class="fa-solid fa-brain text-amber-400"></i>
-                    <h3 class="font-semibold text-sm text-slate-100">Bộ Nhớ AI Học Thích Ứng (Human Corrections)</h3>
-                </div>
-                <button id="closeAdaptiveBtn" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
-            </div>
-            <div class="p-4 overflow-y-auto flex-1 space-y-4 text-xs">
-                <p class="text-slate-400">
-                    Mỗi khi bạn chỉnh sửa bất kỳ ô nào trên bảng (Nominal, Dung sai, Callout), AI sẽ <strong class="text-amber-300">học ngay lập tức</strong> và tự động áp dụng chính xác cho các lần quét sau mà không lặp lại lỗi cũ.
-                </p>
-
-                <!-- Section: Exact Matches -->
-                <div>
-                    <h4 class="font-bold text-slate-200 mb-2 flex items-center gap-1.5">
-                        <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
-                        Quy tắc 1-Shot (Ghi nhớ chính xác từ bạn sửa)
-                    </h4>
-                    <div id="exactRulesList" class="space-y-2">
-                        <!-- Injected by JS -->
-                    </div>
-                </div>
-
-                <!-- Section: Generalized Rules -->
-                <div>
-                    <h4 class="font-bold text-slate-200 mb-2 flex items-center gap-1.5">
-                        <span class="w-2 h-2 rounded-full bg-blue-400"></span>
-                        Quy tắc Tổng quát hóa (Generalized Patterns)
-                    </h4>
-                    <div id="genRulesList" class="space-y-2">
-                        <!-- Injected by JS -->
-                    </div>
-                </div>
-            </div>
-            <div class="px-5 py-3 bg-slate-750 border-t border-slate-700 flex justify-end">
-                <button id="closeAdaptiveBtn2" class="px-4 py-1.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-semibold">Đóng</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- AI VISION CONFIG MODAL -->
-    <div id="aiVisionModal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-        <div class="bg-slate-800 border border-slate-700 rounded-xl w-full max-w-md overflow-hidden shadow-2xl">
-            <div class="px-4 py-3 bg-slate-750 border-b border-slate-700 flex items-center justify-between">
-                <h3 class="text-sm font-bold text-white flex items-center gap-2">
-                    <i class="fa-solid fa-eye text-purple-400"></i>
-                    Cấu Hình AI Vision (Gemini Multimodal LLM)
-                </h3>
-                <button id="closeAiVisionBtn" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
-            </div>
-            <div class="p-4 space-y-4 text-xs">
-                <p class="text-slate-300">
-                    AI Vision sử dụng mô hình thị giác cao cấp của Google để tự động phát hiện toàn bộ kích thước trên bản vẽ và bóc tách chuẩn xác các kích thước khó, ký hiệu GD&T.
-                </p>
-
-                <!-- API Key Input -->
-                <div class="space-y-1.5">
-                    <label class="text-slate-200 font-semibold block flex items-center justify-between">
-                        <span>Gemini API Key:</span>
-                        <a href="https://aistudio.google.com/app/apikey" target="_blank" class="text-purple-400 hover:underline text-[11px] flex items-center gap-1">
-                            <span>Lấy Key Free</span>
-                            <i class="fa-solid fa-arrow-up-right-from-square text-[9px]"></i>
-                        </a>
-                    </label>
-                    <div class="relative">
-                        <input type="password" id="aiApiKeyInput" placeholder="Nhập API Key (AQ... hoặc AIzaSy...)" class="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-slate-100 font-mono text-xs focus:border-purple-500 focus:outline-none">
-                        <button id="toggleAiKeyVisBtn" type="button" class="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-200">
-                            <i class="fa-solid fa-eye text-xs"></i>
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Model Selection -->
-                <div class="grid grid-cols-2 gap-3">
-                    <div class="space-y-1.5">
-                        <label class="text-slate-200 font-semibold block">Mô hình AI Vision:</label>
-                        <select id="aiModelSelect" class="w-full bg-slate-900 border border-slate-600 rounded-lg px-2.5 py-2 text-slate-100 text-xs focus:border-purple-500 focus:outline-none">
-                            <option value="gemini-flash-latest">Gemini Flash (Khuyên dùng - Nhanh)</option>
-                            <option value="gemini-3.8-flash">Gemini 3.8 Flash</option>
-                            <option value="gemini-3.7-flash">Gemini 3.7 Flash</option>
-                            <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash-Lite</option>
-                            <option value="gemini-pro-latest">Gemini Pro (Suy luận sâu)</option>
-                        </select>
-                    </div>
-                    <div class="space-y-1.5">
-                        <label class="text-slate-200 font-semibold block">Gói dịch vụ (Billing Tier):</label>
-                        <select id="aiBillingTierSelect" class="w-full bg-slate-900 border border-slate-600 rounded-lg px-2.5 py-2 text-slate-100 text-xs focus:border-purple-500 focus:outline-none">
-                            <option value="free">Gói Miễn Phí (Free Tier - 1,500 req/ngày)</option>
-                            <option value="paid">Gói Trả Phí (Pay-as-you-go - Trả theo token)</option>
-                        </select>
-                    </div>
-                </div>
-
-                <!-- Custom Quota Limit (for Paid Tier) -->
-                <div id="customQuotaContainer" class="hidden p-2.5 bg-indigo-950/40 rounded-lg border border-indigo-700/50 space-y-1">
-                    <div class="flex items-center justify-between">
-                        <label class="text-slate-200 font-semibold text-[11px]">Hạn mức ngân sách ngày (Request Limit):</label>
-                        <span class="text-[10px] text-indigo-300 font-mono">Đặt 0 để dùng mặc định (10,000)</span>
-                    </div>
-                    <input type="number" id="customRpdInput" min="100" max="1000000" step="500" placeholder="VD: 5000 (lượt/ngày)" class="w-full bg-slate-900 border border-slate-600 rounded px-2.5 py-1.5 text-xs text-slate-100 font-mono focus:border-purple-500 focus:outline-none">
-                </div>
-
-                <!-- Status indicator -->
-                <div id="aiStatusBox" class="p-2.5 bg-slate-900/80 rounded-lg border border-slate-700/80 flex items-center gap-2.5">
-                    <div id="aiStatusDot" class="w-2.5 h-2.5 rounded-full bg-emerald-400 shrink-0"></div>
-                    <span id="aiStatusDetail" class="text-slate-300 text-[11px]">Đang kiểm tra trạng thái...</span>
-                </div>
-
-                <!-- Detailed Usage & Quota Stats Card -->
-                <div class="p-3 bg-slate-900/90 rounded-lg border border-purple-500/30 space-y-2.5">
-                    <div class="flex items-center justify-between">
-                        <span class="font-semibold text-slate-200 flex items-center gap-1.5">
-                            <i class="fa-solid fa-chart-pie text-purple-400"></i>
-                            <span>Hạn Ngạch Sử Dụng Thực Tế (Real Usage)</span>
-                        </span>
-                        <span id="aiModalPercentBadge" class="bg-purple-900/60 text-purple-300 border border-purple-600/60 text-[10px] font-mono px-1.5 py-0.5 rounded">0.0% used</span>
-                    </div>
-
-                    <!-- Requests Per Day Bar -->
-                    <div>
-                        <div class="flex justify-between text-[11px] text-slate-400 mb-1 font-mono">
-                            <span>Lượt gọi trong ngày (RPD):</span>
-                            <span id="aiModalRpdText" class="text-slate-200 font-semibold">0 / 1500 req</span>
-                        </div>
-                        <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden border border-slate-700">
-                            <div id="aiModalRpdBar" class="h-full bg-purple-500 rounded-full transition-all duration-500" style="width: 0%;"></div>
-                        </div>
-                    </div>
-
-                    <!-- Requests Per Minute Bar -->
-                    <div>
-                        <div class="flex justify-between text-[11px] text-slate-400 mb-1 font-mono">
-                            <span>Tốc độ trong phút (RPM):</span>
-                            <span id="aiModalRpmText" class="text-slate-200 font-semibold">0 / 15 req/phút</span>
-                        </div>
-                        <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden border border-slate-700">
-                            <div id="aiModalRpmBar" class="h-full bg-indigo-500 rounded-full transition-all duration-500" style="width: 0%;"></div>
-                        </div>
-                    </div>
-
-                    <div class="pt-1.5 border-t border-slate-800 flex justify-between items-center text-[10px] text-slate-400">
-                        <span>Tokens hôm nay: <span id="aiModalTokensText" class="text-cyan-300 font-mono font-semibold">0</span> <span id="aiModalCostText" class="text-slate-400 ml-1">($0.00)</span></span>
-                        <span id="aiModalTierBadge" class="text-emerald-400 font-medium flex items-center gap-1">
-                            <i class="fa-solid fa-circle-check"></i>
-                            <span>Gói Free Tier</span>
-                        </span>
-                    </div>
-                </div>
-            </div>
-            <div class="px-4 py-3 bg-slate-900/60 border-t border-slate-700 flex items-center justify-between">
-                <div class="flex items-center space-x-2">
-                    <button id="testAiKeyBtn" class="bg-slate-700 hover:bg-slate-600 text-slate-200 px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center gap-1.5">
-                        <i class="fa-solid fa-plug"></i>
-                        <span>Kiểm tra</span>
-                    </button>
-                    <button id="clearAiKeyBtn" class="text-slate-400 hover:text-red-400 border border-slate-700 hover:border-red-500/50 px-2.5 py-1.5 rounded-lg text-xs font-medium transition flex items-center gap-1" title="Gỡ bỏ API Key khỏi máy">
-                        <i class="fa-solid fa-trash-can"></i>
-                        <span>Gỡ Key</span>
-                    </button>
-                </div>
-                <div class="flex items-center space-x-2">
-                    <button id="cancelAiVisionBtn" class="text-slate-400 hover:text-white px-3 py-1.5 text-xs">Đóng</button>
-                    <button id="saveAiVisionBtn" class="bg-purple-600 hover:bg-purple-500 text-white font-medium px-4 py-1.5 rounded-lg text-xs transition shadow-md shadow-purple-600/30">
-                        Lưu cấu hình
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <!-- TOAST NOTIFICATION CONTAINER -->
-    <div id="toastContainer" class="fixed bottom-4 right-4 z-50 flex flex-col space-y-2 pointer-events-none"></div>
+    <div id="toastContainer" class="fixed bottom-8 right-4 z-50 flex flex-col space-y-2 pointer-events-none"></div>
 
-    <script src="/static/js/canvas_editor.js"></script>
+    <script src="/static/js/canvas_editor.js?v=1.2.1"></script>
 </body>
 </html>

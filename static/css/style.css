@@ -35,3 +35,29 @@
     outline: 2px solid #3b82f6;
     border-radius: 4px;
 }
+
+/* Glassmorphism Floating Dock */
+.glass-dock {
+    background: rgba(15, 23, 42, 0.85);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(51, 65, 85, 0.7);
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
+}
+
+/* Subtle row hover action buttons transition */
+.row-actions {
+    opacity: 0;
+    transition: opacity 0.15s ease-in-out;
+}
+tr:hover .row-actions {
+    opacity: 1;
+}
+
+/* Settings tab button active state */
+.settings-tab-btn.active {
+    background-color: rgba(59, 130, 246, 0.15);
+    color: #60a5fa;
+    border-color: #3b82f6;
+}
+
