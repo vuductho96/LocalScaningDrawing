@@ -128,12 +128,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const aiUsagePercentText = document.getElementById('aiUsagePercentText');
     const aiUsageProgressBar = document.getElementById('aiUsageProgressBar');
     const aiUsageReqText = document.getElementById('aiUsageReqText');
+    const aiBillingTierSelect = document.getElementById('aiBillingTierSelect');
+    const customQuotaContainer = document.getElementById('customQuotaContainer');
+    const customRpdInput = document.getElementById('customRpdInput');
     const aiModalPercentBadge = document.getElementById('aiModalPercentBadge');
     const aiModalRpdText = document.getElementById('aiModalRpdText');
     const aiModalRpdBar = document.getElementById('aiModalRpdBar');
     const aiModalRpmText = document.getElementById('aiModalRpmText');
     const aiModalRpmBar = document.getElementById('aiModalRpmBar');
     const aiModalTokensText = document.getElementById('aiModalTokensText');
+    const aiModalCostText = document.getElementById('aiModalCostText');
+    const aiModalTierBadge = document.getElementById('aiModalTierBadge');
 
     // Toast Notification helper
     function showToast(message, type = 'success') {
@@ -1603,6 +1608,45 @@ document.addEventListener('DOMContentLoaded', () => {
         if (aiModalTokensText) {
             aiModalTokensText.textContent = Number(tokens).toLocaleString();
         }
+        if (aiModalCostText) {
+            const cost = usage.estimated_cost_usd || 0;
+            aiModalCostText.textContent = `($${cost.toFixed(4)})`;
+        }
+
+        if (aiModalTierBadge) {
+            const isPaid = (usage.billing_tier === 'paid');
+            aiModalTierBadge.innerHTML = isPaid
+                ? '<i class="fa-solid fa-bolt text-indigo-400"></i><span class="text-indigo-300 font-semibold">Pay-as-you-go</span>'
+                : '<i class="fa-solid fa-circle-check text-emerald-400"></i><span class="text-emerald-300">Gói Free Tier</span>';
+        }
+
+        // Tier Select & Custom Quota Container sync
+        if (aiBillingTierSelect && usage.billing_tier) {
+            aiBillingTierSelect.value = usage.billing_tier;
+            if (customQuotaContainer) {
+                if (usage.billing_tier === 'paid') {
+                    customQuotaContainer.classList.remove('hidden');
+                } else {
+                    customQuotaContainer.classList.add('hidden');
+                }
+            }
+        }
+        if (customRpdInput && usage.custom_rpd_limit !== undefined) {
+            customRpdInput.value = usage.custom_rpd_limit > 0 ? usage.custom_rpd_limit : '';
+        }
+    }
+
+    // Toggle custom quota input when tier changes
+    if (aiBillingTierSelect) {
+        aiBillingTierSelect.addEventListener('change', () => {
+            if (customQuotaContainer) {
+                if (aiBillingTierSelect.value === 'paid') {
+                    customQuotaContainer.classList.remove('hidden');
+                } else {
+                    customQuotaContainer.classList.add('hidden');
+                }
+            }
+        });
     }
 
     async function checkAiVisionStatus() {
@@ -1668,6 +1712,9 @@ document.addEventListener('DOMContentLoaded', () => {
         testAiKeyBtn.addEventListener('click', async () => {
             const key = aiApiKeyInput.value.trim();
             const model = aiModelSelect.value;
+            const tier = aiBillingTierSelect ? aiBillingTierSelect.value : 'free';
+            const customRpd = customRpdInput ? parseInt(customRpdInput.value) || 0 : 0;
+
             if (!key) {
                 alert('Vui lòng nhập API Key trước khi kiểm tra!');
                 return;
@@ -1680,7 +1727,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 const resp = await fetch('/api/ai-vision/config', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ api_key: key, model_name: model })
+                    body: JSON.stringify({
+                        api_key: key,
+                        model_name: model,
+                        billing_tier: tier,
+                        custom_rpd_limit: customRpd
+                    })
                 });
                 const res = await resp.json();
                 if (res.status && res.status.configured) {
@@ -1693,7 +1745,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } catch (err) {
                 alert('Lỗi kiểm tra: ' + err.message);
             } finally {
-                testAiKeyBtn.innerHTML = '<i class="fa-solid fa-plug"></i> <span>Kiểm tra kết nối</span>';
+                testAiKeyBtn.innerHTML = '<i class="fa-solid fa-plug"></i> <span>Kiểm tra</span>';
                 testAiKeyBtn.disabled = false;
             }
         });
@@ -1718,10 +1770,18 @@ document.addEventListener('DOMContentLoaded', () => {
         saveAiVisionBtn.addEventListener('click', async () => {
             const key = aiApiKeyInput.value.trim();
             const model = aiModelSelect.value;
+            const tier = aiBillingTierSelect ? aiBillingTierSelect.value : 'free';
+            const customRpd = customRpdInput ? parseInt(customRpdInput.value) || 0 : 0;
+
             await fetch('/api/ai-vision/config', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ api_key: key, model_name: model })
+                body: JSON.stringify({
+                    api_key: key,
+                    model_name: model,
+                    billing_tier: tier,
+                    custom_rpd_limit: customRpd
+                })
             });
             if (key) {
                 showToast('Đã lưu cấu hình AI Vision thành công!', 'success');

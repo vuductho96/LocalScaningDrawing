@@ -12,14 +12,22 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(BASE_DIR, "ai_config.json")
 USAGE_FILE = os.path.join(BASE_DIR, "ai_usage.json")
 
-# Quota mac dinh cua goi Gemini Free Tier:
-# - RPD (Requests Per Day): 1500 yeu cau / ngay
-# - RPM (Requests Per Minute): 15 yeu cau / phut
-# - TPM (Tokens Per Minute): 1,000,000 tokens / phut
-DEFAULT_FREE_QUOTA = {
-    "rpd_limit": 1500,  # 1500 requests/day
-    "rpm_limit": 15,    # 15 requests/minute
-    "tpm_limit": 1000000 # 1M tokens/minute
+# Hạn mức mặc định theo từng gói dịch vụ của Google Gemini:
+QUOTA_PROFILES = {
+    "free": {
+        "name": "Free Tier (Miễn phí vĩnh viễn)",
+        "rpd_limit": 1500,        # 1,500 requests/ngày
+        "rpm_limit": 15,          # 15 requests/phút
+        "tpm_limit": 1000000,     # 1,000,000 tokens/phút
+        "daily_cost_cap": 0.0
+    },
+    "paid": {
+        "name": "Pay-as-you-go (Trả phí linh hoạt theo Token)",
+        "rpd_limit": 10000,       # 10,000 requests/ngày (hoặc tùy chỉnh)
+        "rpm_limit": 1000,        # 1,000 requests/phút
+        "tpm_limit": 4000000,     # 4,000,000 tokens/phút
+        "daily_cost_cap": 10.0
+    }
 }
 
 CANDIDATE_MODELS = [
@@ -35,6 +43,9 @@ class AIVisionService:
     def __init__(self):
         self.api_key = os.environ.get("GEMINI_API_KEY", "")
         self.model_name = CANDIDATE_MODELS[0]
+        self.billing_tier = "free"  # "free" hoac "paid"
+        self.custom_rpd_limit = 0    # 0 = dung mac dinh profile
+        self.server_tier_detected = "standard"
         self._load_config()
         self._load_usage()
 
@@ -47,6 +58,10 @@ class AIVisionService:
                         self.api_key = data["api_key"]
                     if data.get("model_name"):
                         self.model_name = data["model_name"]
+                    if data.get("billing_tier"):
+                        self.billing_tier = data["billing_tier"]
+                    if data.get("custom_rpd_limit"):
+                        self.custom_rpd_limit = int(data["custom_rpd_limit"])
             except Exception as e:
                 logger.error(f"Error reading ai_config.json: {e}")
 
@@ -59,15 +74,24 @@ class AIVisionService:
             except Exception as e:
                 logger.error(f"Error reading ai_usage.json: {e}")
 
-    def save_config(self, api_key: str, model_name: Optional[str] = None):
+    def save_config(self, api_key: str, model_name: Optional[str] = None, billing_tier: Optional[str] = None, custom_rpd_limit: Optional[int] = None):
         self.api_key = api_key.strip()
         if model_name:
             self.model_name = model_name.strip()
+        if billing_tier in QUOTA_PROFILES:
+            self.billing_tier = billing_tier
+        if custom_rpd_limit is not None and custom_rpd_limit > 0:
+            self.custom_rpd_limit = custom_rpd_limit
+        elif custom_rpd_limit == 0:
+            self.custom_rpd_limit = 0
+
         try:
             with open(CONFIG_FILE, "w", encoding="utf-8") as f:
                 json.dump({
                     "api_key": self.api_key,
-                    "model_name": self.model_name
+                    "model_name": self.model_name,
+                    "billing_tier": self.billing_tier,
+                    "custom_rpd_limit": self.custom_rpd_limit
                 }, f, indent=2)
             return True
         except Exception as e:
@@ -138,18 +162,33 @@ class AIVisionService:
         day_stats = self.usage_data.get("days", {}).get(day_key, {"requests": 0, "tokens": 0, "models": {}})
         min_stats = self.usage_data.get("minutes", {}).get(min_key, {"requests": 0, "tokens": 0})
 
-        rpd_limit = DEFAULT_FREE_QUOTA["rpd_limit"]
-        rpm_limit = DEFAULT_FREE_QUOTA["rpm_limit"]
+        profile = QUOTA_PROFILES.get(self.billing_tier, QUOTA_PROFILES["free"])
+        
+        # Hạn mức ngày: ưu tiên custom_rpd_limit nếu người dùng đặt
+        rpd_limit = self.custom_rpd_limit if self.custom_rpd_limit > 0 else profile["rpd_limit"]
+        rpm_limit = profile["rpm_limit"]
+        tpm_limit = profile["tpm_limit"]
 
         rpd_used = day_stats["requests"]
         rpm_used = min_stats["requests"]
+        day_tokens = day_stats.get("tokens", 0)
 
-        percent_rpd = min(100.0, round((rpd_used / rpd_limit) * 100, 1))
-        percent_rpm = min(100.0, round((rpm_used / rpm_limit) * 100, 1))
+        # Tính tổng chi phí ước tính (cho gói trả phí: ~$0.075 / 1M tokens đối với Gemini 2.5/3 Flash)
+        estimated_cost_usd = round((day_tokens / 1_000_000.0) * 0.075, 4)
+
+        # Phần trăm sử dụng thực tế:
+        # Nếu là gói Free: % dựa trên RPD limit
+        # Nếu là gói Paid: % dựa trên hạn mức ngày người dùng thiết lập (ví dụ budget 5,000 req/ngày hoặc 10,000 req/ngày)
+        percent_rpd = min(100.0, round((rpd_used / rpd_limit) * 100, 1)) if rpd_limit > 0 else 0.0
+        percent_rpm = min(100.0, round((rpm_used / rpm_limit) * 100, 1)) if rpm_limit > 0 else 0.0
 
         return {
             "configured": self.is_configured(),
             "model": self.model_name,
+            "billing_tier": self.billing_tier,
+            "tier_name": profile["name"],
+            "server_tier_detected": self.server_tier_detected,
+            "custom_rpd_limit": self.custom_rpd_limit,
             "day_key": day_key,
             "rpd_used": rpd_used,
             "rpd_limit": rpd_limit,
@@ -159,7 +198,8 @@ class AIVisionService:
             "rpm_limit": rpm_limit,
             "rpm_remaining": max(0, rpm_limit - rpm_used),
             "percent_rpm": percent_rpm,
-            "day_tokens": day_stats.get("tokens", 0),
+            "day_tokens": day_tokens,
+            "estimated_cost_usd": estimated_cost_usd,
             "models_used": day_stats.get("models", {})
         }
 
@@ -197,6 +237,11 @@ class AIVisionService:
                     text = res_json["candidates"][0]["content"]["parts"][0]["text"]
                     self.model_name = model  # Giữ lại model thành công
                     
+                    # Phát hiện service tier trả về từ Google Server
+                    tier_hdr = r.headers.get("X-Gemini-Service-Tier") or r.headers.get("x-gemini-service-tier")
+                    if tier_hdr:
+                        self.server_tier_detected = str(tier_hdr).strip()
+
                     # Ghi nhận usage request & tokens
                     usage_meta = res_json.get("usageMetadata", {})
                     tot_tokens = usage_meta.get("totalTokenCount", 0)

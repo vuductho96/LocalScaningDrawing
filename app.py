@@ -260,6 +260,8 @@ async def delete_adaptive_rule(key: str, rule_type: str = "exact"):
 class AIVisionConfigRequest(BaseModel):
     api_key: str
     model_name: Optional[str] = "gemini-flash-latest"
+    billing_tier: Optional[str] = "free"
+    custom_rpd_limit: Optional[int] = 0
 
 class AIInspectCropRequest(BaseModel):
     file_id: str
@@ -287,7 +289,12 @@ async def get_ai_vision_usage():
 @app.post("/api/ai-vision/config")
 async def set_ai_vision_config(req: AIVisionConfigRequest):
     """Luu API key va cau hinh model AI Vision."""
-    saved = global_ai_vision_service.save_config(req.api_key, req.model_name)
+    saved = global_ai_vision_service.save_config(
+        api_key=req.api_key,
+        model_name=req.model_name,
+        billing_tier=req.billing_tier,
+        custom_rpd_limit=req.custom_rpd_limit
+    )
     status = global_ai_vision_service.check_status()
     return {"success": saved, "status": status}
 
