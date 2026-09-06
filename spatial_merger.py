@@ -170,14 +170,43 @@ class DimensionSpatialMerger:
     @staticmethod
     def extract_stacked_subregion(crop_cv, nominal_str: str, rapid_engine, parser) -> Dict[str, Any]:
         """
-        Sub-Region Zoom Inspection:
-        Khi crop chua bóc tách được dung sai (tol_type == 'global') nhung co nominal,
-        zoom rieng nua ben phai cua crop de quet dung sai xep chong (stacked tolerance).
+        Sub-Region Zoom Inspection ket hop thuat toan check_stacked_tolerances tu edocr2:
+        Khi crop chua boc tach duoc dung sai (tol_type == 'global') nhung co nominal,
+        1. Su dung pixel density cut tu edocr2 de tach [Nominal, Upper, Lower]
+        2. Hoac zoom rieng nua ben phai cua crop de quet dung sai xep chong (stacked tolerance).
         """
         if crop_cv is None or crop_cv.size == 0 or rapid_engine is None:
             return None
 
         import cv2
+        from image_enhancer import ImageEnhancer
+
+        # Cach 1: Su dung thuat toan check_stacked_tolerances tu edocr2 de cat theo mat do pixel
+        try:
+            parts = ImageEnhancer.check_stacked_tolerances(crop_cv)
+            if len(parts) == 3:
+                # parts[0]: nominal, parts[1]: upper_tol, parts[2]: lower_tol
+                def _quick_ocr(img_part):
+                    zoomed = cv2.resize(img_part, (0, 0), fx=2.5, fy=2.5, interpolation=cv2.INTER_LANCZOS4)
+                    padded = cv2.copyMakeBorder(zoomed, 15, 15, 15, 15, cv2.BORDER_CONSTANT, value=[255, 255, 255])
+                    res, _ = rapid_engine(padded)
+                    txts = [t[1].strip() for t in res if t[1].strip()] if res else []
+                    return txts
+
+                u_txts = _quick_ocr(parts[1])
+                l_txts = _quick_ocr(parts[2])
+                u_tol = DimensionSpatialMerger.pick_best_tol(u_txts, preferred_sign='+')
+                l_tol = DimensionSpatialMerger.pick_best_tol(l_txts, preferred_sign='-')
+
+                if u_tol and l_tol:
+                    combined = f"{nominal_str} {u_tol} {l_tol}".strip()
+                    parsed = parser.parse(combined)
+                    if parsed and parsed.get("nominal") is not None and parsed.get("tol_type") in ["local", "local_stacked"]:
+                        return parsed
+        except Exception:
+            pass
+
+        # Cach 2: Sub-region vertical split fallback
         h, w = crop_cv.shape[:2]
         right_w = max(int(w * 0.45), 15)
         right_part = crop_cv[:, w - right_w:]
