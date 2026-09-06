@@ -47,13 +47,13 @@ class ExportService:
         right_align = Alignment(horizontal="right", vertical="center")
 
         # 1. Tiêu đề & Thông tin bản vẽ
-        ws.merge_cells("A1:I1")
+        ws.merge_cells("A1:J1")
         ws["A1"] = f"BẢNG BÓC TÁCH KÍCH THƯỚC & DUNG SAI BẢN VẼ: {drawing_name}"
         ws["A1"].font = title_font
         ws["A1"].alignment = left_align
         ws.row_dimensions[1].height = 28
 
-        ws.merge_cells("A2:I2")
+        ws.merge_cells("A2:J2")
         ws["A2"] = f"Quy tắc dung sai chung (Global Constraints): {global_constraints_summary or 'Theo số chữ số thập phân'}"
         ws["A2"].font = subtitle_font
         ws["A2"].alignment = left_align
@@ -69,6 +69,7 @@ class ExportService:
             ("Dung Sai Dưới (-)", 18, center_align),
             ("Loại Dung Sai", 16, center_align),
             ("Kích Thước Đầy Đủ (Callout)", 32, left_align),
+            ("Raw Text (OCR)", 24, left_align),
             ("Tọa Độ Crop (X, Y, W, H)", 26, center_align),
         ]
 
@@ -143,6 +144,12 @@ class ExportService:
             c8.font = data_font
             c8.border = thin_border
 
+            # Raw Text (OCR thô)
+            c9 = ws.cell(row=row_num, column=9, value=r.get("raw_text", ""))
+            c9.alignment = left_align
+            c9.font = data_font
+            c9.border = thin_border
+
             # Tọa độ Crop (X, Y, W, H)
             b = r.get("box") or r.get("raw_box") or {}
             p_num = r.get("page", 0)
@@ -150,10 +157,10 @@ class ExportService:
                 coord_val = f"P{p_num + 1}: X={int(b.get('x', 0))}, Y={int(b.get('y', 0))}, W={int(b.get('w', 0))}, H={int(b.get('h', 0))}"
             else:
                 coord_val = "-"
-            c9 = ws.cell(row=row_num, column=9, value=coord_val)
-            c9.alignment = center_align
-            c9.font = data_font
-            c9.border = thin_border
+            c10 = ws.cell(row=row_num, column=10, value=coord_val)
+            c10.alignment = center_align
+            c10.font = data_font
+            c10.border = thin_border
 
         stream = io.BytesIO()
         wb.save(stream)
@@ -170,7 +177,7 @@ class ExportService:
         writer.writerow([
             "STT", "So Luong", "Ky Hieu", "Nominal", 
             "Dung Sai Tren (+)", "Dung Sai Duoi (-)", "Loai Dung Sai", 
-            "Full Callout", "Toa Do Crop (X,Y,W,H)"
+            "Full Callout", "Raw Text", "Toa Do Crop (X,Y,W,H)"
         ])
         for i, r in enumerate(rows):
             nom_val = r.get("nominal_str") if (
@@ -191,6 +198,7 @@ class ExportService:
                 r.get("lower_tol", ""),
                 r.get("tol_type", ""),
                 r.get("full_callout", ""),
+                r.get("raw_text", ""),
                 coord_val
             ])
         output.seek(0)

@@ -12,8 +12,13 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Transform (Pan & Zoom)
         scale: 1.0,
+        minScale: 0.1, // Khóa cứng kích thước mở bản vẽ - không cho thu nhỏ hơn mức này
+        isFitted: true, // Trạng thái bản vẽ đang fit toàn màn hình
         panX: 0,
         panY: 0,
+        undoStack: [], // Lịch sử các bước hoàn tác (Undo / Ctrl + Z)
+        preDragState: null,
+        bubbleMoved: false,
         
         // Mouse interaction
         isLeftDown: false,
@@ -67,7 +72,12 @@ document.addEventListener('DOMContentLoaded', () => {
         draggingBubbleRowId: null,
         bubbleDragStartX: 0,
         bubbleDragStartY: 0,
-        bubbleStartPos: null
+        bubbleStartPos: null,
+
+        // OCR Device (GPU DirectML / CPU)
+        ocrDevice: 'gpu',
+        dmlAvailable: false,
+        gpuName: ''
     };
 
     // DOM Elements
@@ -97,6 +107,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const zoomOutBtn = document.getElementById('zoomOutBtn');
     const fitScreenBtn = document.getElementById('fitScreenBtn');
     const resetZoomBtn = document.getElementById('resetZoomBtn');
+    const undoBtn = document.getElementById('undoBtn');
     const panToolBtn = document.getElementById('panToolBtn');
     const toggleShowCoordsBtn = document.getElementById('toggleShowCoordsBtn');
     const coordsBadgeText = document.getElementById('coordsBadgeText');
@@ -166,6 +177,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const aiStatusDetail = document.getElementById('aiStatusDetail');
     const toggleAiKeyVisBtn = document.getElementById('toggleAiKeyVisBtn');
     const aiAutoScanBtn = document.getElementById('aiAutoScanBtn');
+    const localAutoScanBtn = document.getElementById('localAutoScanBtn');
+    const ocrDeviceToggleBtn = document.getElementById('ocrDeviceToggleBtn');
+    const ocrDeviceIcon = document.getElementById('ocrDeviceIcon');
+    const ocrDeviceLabel = document.getElementById('ocrDeviceLabel');
+    const ocrDeviceSelect = document.getElementById('ocrDeviceSelect');
+    const ocrGpuNameDisplay = document.getElementById('ocrGpuNameDisplay');
+    const ocrSettingsDmlBadge = document.getElementById('ocrSettingsDmlBadge');
 
     // AI Usage Progress Bar Elements
     const aiUsagePercentText = document.getElementById('aiUsagePercentText');
@@ -231,12 +249,13 @@ document.addEventListener('DOMContentLoaded', () => {
             document.body.style.cursor = 'col-resize';
             document.body.style.userSelect = 'none';
             panelResizer.classList.add('bg-cyan-500');
+            rightResultsPanel.style.transition = 'none'; // Tắt animation CSS để resize mượt mà 60fps không bị lag
             e.preventDefault();
         });
 
         window.addEventListener('mousemove', (e) => {
             if (!isResizingPanel) return;
-            const deltaX = startX - e.clientX; // Kéo sang trái -> Tăng bề rộng panel phải
+            const deltaX = startX - e.clientX; // Kéo sang trái -> Tăng bề rộng panel phải, thu hẹp canvas
             const minW = 450;
             const maxW = Math.max(500, window.innerWidth - 350);
             const newWidth = Math.min(Math.max(startWidth + deltaX, minW), maxW);
@@ -250,17 +269,46 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.body.style.cursor = '';
                 document.body.style.userSelect = '';
                 panelResizer.classList.remove('bg-cyan-500');
+                rightResultsPanel.style.transition = '';
                 localStorage.setItem('autoscan_panel_width', rightResultsPanel.offsetWidth);
                 resizeCanvas();
             }
         });
     }
 
-    // Resize Canvas to fit viewport
+    // Resize Canvas to fit viewport & tự động scale bản vẽ theo thanh chia màn hình
     function resizeCanvas() {
         if (!viewport) return;
         canvas.width = viewport.clientWidth;
         canvas.height = viewport.clientHeight;
+        if (state.image && state.pageWidth > 0 && state.pageHeight > 0) {
+            const pad = 40;
+            const scaleX = (canvas.width - pad) / state.pageWidth;
+            const scaleY = (canvas.height - pad) / state.pageHeight;
+            const oldMinScale = state.minScale || Math.min(scaleX, scaleY);
+            const newMinScale = Math.min(scaleX, scaleY);
+            state.minScale = newMinScale;
+
+            // Kiểm tra xem bản vẽ trước khi resize có đang ở chế độ Fit vừa khít màn hình không
+            const wasFitted = state.isFitted || (state.scale <= oldMinScale + 0.005);
+
+            if (wasFitted) {
+                // Tự động scale co giãn bản vẽ theo khung nhìn mới để luôn vừa vặn, không bị cắt khuất
+                state.isFitted = true;
+                state.scale = newMinScale;
+                state.panX = (canvas.width - state.pageWidth * state.scale) / 2;
+                state.panY = (canvas.height - state.pageHeight * state.scale) / 2;
+            } else {
+                // Nếu người dùng đã chủ động zoom phóng to trước đó: giữ tỷ lệ phóng to tương ứng
+                const zoomRatio = state.scale / oldMinScale;
+                state.scale = Math.max(newMinScale, newMinScale * zoomRatio);
+                // Giữ pan trong phạm vi hợp lý
+                const maxPanX = canvas.width - pad;
+                const minPanX = pad - state.pageWidth * state.scale;
+                state.panX = Math.min(maxPanX, Math.max(minPanX, state.panX));
+            }
+            updateZoomText();
+        }
         render();
     }
     window.addEventListener('resize', resizeCanvas);
@@ -595,13 +643,16 @@ document.addEventListener('DOMContentLoaded', () => {
         return { x: imgX, y: imgY };
     }
 
-    // Fit image to screen
+    // Fit image to screen (Khóa cứng tỷ lệ hiển thị vừa khít khung nhìn, không cho thu nhỏ hơn)
     function fitToScreen() {
         if (!state.image) return;
         const pad = 40;
         const scaleX = (canvas.width - pad) / state.pageWidth;
         const scaleY = (canvas.height - pad) / state.pageHeight;
-        state.scale = Math.min(scaleX, scaleY, 1.5);
+        const fitScale = Math.min(scaleX, scaleY);
+        state.scale = fitScale;
+        state.minScale = fitScale; // Khóa cứng - không cho thu bé hơn mức này!
+        state.isFitted = true;
         state.panX = (canvas.width - state.pageWidth * state.scale) / 2;
         state.panY = (canvas.height - state.pageHeight * state.scale) / 2;
         updateZoomText();
@@ -609,7 +660,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateZoomText() {
-        zoomLevelText.textContent = `${Math.round(state.scale * 100)}%`;
+        if (zoomLevelText) {
+            zoomLevelText.textContent = `${Math.round(state.scale * 100)}%`;
+        }
     }
 
     // Pan Mode Toggle function
@@ -662,12 +715,21 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
+        // Phím Ctrl + Z hoặc Cmd + Z để Hoàn tác (Undo)
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && 
+            e.target.tagName !== 'INPUT' && !e.target.isContentEditable) {
+            e.preventDefault();
+            undo();
+            return;
+        }
+
         // Delete hoặc Backspace để xóa box đang chọn
         if ((e.key === 'Delete' || e.key === 'Backspace') && 
             e.target.tagName !== 'INPUT' && !e.target.isContentEditable) {
             if (state.selectedRowId !== null) {
                 const idx = state.rows.findIndex(r => r.id === state.selectedRowId);
                 if (idx !== -1) {
+                    pushUndoState();
                     state.rows.splice(idx, 1);
                     state.selectedRowId = null;
                     renderTable();
@@ -773,6 +835,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     state.bubbleDragStartY = pt.y;
                     const curBc = getBubbleCenter(clickedBubbleRow, clickedBubbleRow.raw_box);
                     state.bubbleStartPos = { x: curBc.x, y: curBc.y };
+                    state.preDragState = JSON.parse(JSON.stringify(state.rows));
+                    state.bubbleMoved = false;
                     viewport.style.cursor = 'grabbing';
                     highlightTableRow(clickedBubbleRow.id);
                     render();
@@ -793,6 +857,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         state.dragStartY = pt.y;
                         state.boxStart = { ...selRow.raw_box };
                         state.hasBoxChanged = false;
+                        state.preDragState = JSON.parse(JSON.stringify(state.rows));
                         viewport.style.cursor = hit.cursor;
                         e.preventDefault();
                         return;
@@ -827,6 +892,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 state.dragStartY = pt.y;
                 state.boxStart = { ...clickedRow.raw_box };
                 state.hasBoxChanged = false;
+                state.preDragState = JSON.parse(JSON.stringify(state.rows));
                 viewport.style.cursor = 'move';
                 render();
                 highlightTableRow(clickedRow.id);
@@ -855,6 +921,7 @@ document.addEventListener('DOMContentLoaded', () => {
         for (let i = state.rows.length - 1; i >= 0; i--) {
             const r = state.rows[i];
             if (r.page === state.currentPage && isPointInBubble(pt, r)) {
+                pushUndoState();
                 r.bubble_pos = null;
                 render();
                 showToast(`Đã khôi phục vị trí bong bóng #${r.id} về mặc định`, 'info');
@@ -878,6 +945,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (state.isDraggingBubble && state.draggingBubbleRowId !== null) {
             const dx = pt.x - state.bubbleDragStartX;
             const dy = pt.y - state.bubbleDragStartY;
+            if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
+                state.bubbleMoved = true;
+            }
             const r = state.rows.find(row => row.id === state.draggingBubbleRowId);
             if (r && state.bubbleStartPos) {
                 r.bubble_pos = {
@@ -1041,6 +1111,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 0. Kết thúc kéo rê Bong bóng Bubble tự do
         if (state.isDraggingBubble) {
+            if (state.bubbleMoved && state.preDragState) {
+                if (!state.undoStack) state.undoStack = [];
+                state.undoStack.push({
+                    rows: state.preDragState,
+                    selectedRowId: state.selectedRowId
+                });
+                if (state.undoStack.length > 50) state.undoStack.shift();
+                updateUndoButton();
+            }
+            state.preDragState = null;
+            state.bubbleMoved = false;
             state.isDraggingBubble = false;
             state.draggingBubbleRowId = null;
             state.bubbleStartPos = null;
@@ -1163,13 +1244,35 @@ document.addEventListener('DOMContentLoaded', () => {
     // Disable context menu on right-click for canvas
     viewport.addEventListener('contextmenu', (e) => e.preventDefault());
 
-    // Wheel Zoom centered at cursor
+    // Wheel Zoom centered at cursor (Có giới hạn khóa cứng không thu nhỏ hơn kích thước mở ban đầu fitToScreen)
     viewport.addEventListener('wheel', (e) => {
         if (!state.image) return;
         e.preventDefault();
 
         const zoomFactor = e.deltaY < 0 ? 1.15 : 0.85;
-        const newScale = Math.min(Math.max(0.1, state.scale * zoomFactor), 8.0);
+        const minAllowed = state.minScale || 0.1;
+
+        // Nếu người dùng đang cuộn chuột thu nhỏ khi đã ở mức sàn khóa cứng
+        if (zoomFactor < 1.0 && state.scale <= minAllowed + 0.001) {
+            state.isFitted = true;
+            return;
+        }
+
+        let newScale = state.scale * zoomFactor;
+        if (newScale <= minAllowed) {
+            newScale = minAllowed;
+            // Thu nhỏ kịch sàn về mức fit -> tự động căn giữa khung nhìn
+            state.scale = newScale;
+            state.isFitted = true;
+            state.panX = (canvas.width - state.pageWidth * state.scale) / 2;
+            state.panY = (canvas.height - state.pageHeight * state.scale) / 2;
+            updateZoomText();
+            render();
+            return;
+        }
+
+        newScale = Math.min(newScale, 8.0);
+        state.isFitted = false; // Người dùng đã phóng to vượt mức fit
 
         const rect = canvas.getBoundingClientRect();
         const mouseX = e.clientX - rect.left;
@@ -1184,25 +1287,70 @@ document.addEventListener('DOMContentLoaded', () => {
         render();
     }, { passive: false });
 
-    // Floating Zoom Controls
-    zoomInBtn.addEventListener('click', () => {
-        state.scale = Math.min(state.scale * 1.25, 8.0);
-        updateZoomText();
+    // Floating Dock Controls (Fit to screen & Undo)
+    if (fitScreenBtn) {
+        fitScreenBtn.addEventListener('click', fitToScreen);
+    }
+    if (undoBtn) {
+        undoBtn.addEventListener('click', undo);
+    }
+    if (zoomInBtn) {
+        zoomInBtn.addEventListener('click', () => {
+            state.scale = Math.min(state.scale * 1.25, 8.0);
+            updateZoomText();
+            render();
+        });
+    }
+    if (zoomOutBtn) {
+        zoomOutBtn.addEventListener('click', () => {
+            const minAllowed = state.minScale || 0.1;
+            state.scale = Math.max(state.scale / 1.25, minAllowed);
+            updateZoomText();
+            render();
+        });
+    }
+    if (resetZoomBtn) {
+        resetZoomBtn.addEventListener('click', fitToScreen);
+    }
+
+    // Helper: Quản lý Lịch sử Undo / Ctrl + Z
+    function pushUndoState() {
+        if (!state.undoStack) state.undoStack = [];
+        state.undoStack.push({
+            rows: JSON.parse(JSON.stringify(state.rows)),
+            selectedRowId: state.selectedRowId
+        });
+        if (state.undoStack.length > 50) {
+            state.undoStack.shift();
+        }
+        updateUndoButton();
+    }
+
+    function undo() {
+        if (!state.undoStack || state.undoStack.length === 0) {
+            showToast('Không có thao tác nào để hoàn tác (Undo)', 'info');
+            return;
+        }
+        const lastState = state.undoStack.pop();
+        state.rows = lastState.rows || [];
+        state.selectedRowId = lastState.selectedRowId !== undefined ? lastState.selectedRowId : null;
+        renderTable();
         render();
-    });
-    zoomOutBtn.addEventListener('click', () => {
-        state.scale = Math.max(state.scale / 1.25, 0.1);
-        updateZoomText();
-        render();
-    });
-    fitScreenBtn.addEventListener('click', fitToScreen);
-    resetZoomBtn.addEventListener('click', () => {
-        state.scale = 1.0;
-        state.panX = 0;
-        state.panY = 0;
-        updateZoomText();
-        render();
-    });
+        updateUndoButton();
+        showToast('Đã hoàn tác (Ctrl + Z)', 'success');
+    }
+
+    function updateUndoButton() {
+        if (!undoBtn) return;
+        if (state.undoStack && state.undoStack.length > 0) {
+            undoBtn.classList.remove('opacity-40', 'cursor-not-allowed');
+            undoBtn.classList.add('text-slate-300', 'hover:text-white', 'hover:bg-slate-800/80');
+        } else {
+            undoBtn.classList.add('opacity-40', 'cursor-not-allowed');
+            undoBtn.classList.remove('hover:text-white', 'hover:bg-slate-800/80');
+        }
+    }
+    updateUndoButton();
 
     // Helper: Bật/Tắt hiển thị nhãn tọa độ X, Y trên Canvas
     function setCoordinatesVisibility(visible, persist = true) {
@@ -1629,6 +1777,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 crop_rotation: cropRot
             };
 
+            pushUndoState();
+
             if (targetRowId !== null) {
                 const existingIdx = state.rows.findIndex(r => r.id === targetRowId);
                 if (existingIdx !== -1) {
@@ -1737,9 +1887,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td class="py-3 px-3">
                     <div class="flex items-center gap-2">
                         <span class="editable-cell font-mono font-bold text-cyan-300 text-base px-1.5 py-0.5 rounded hover:bg-slate-700/50 transition cursor-text block truncate max-w-[220px]" contenteditable="true" data-field="full_callout" title="${(row.full_callout || '').replace(/"/g, '&quot;')}">${row.full_callout || '-'}</span>
-                        <span class="ai-learned-badge text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-900/60 text-amber-300 border border-amber-600/70 shrink-0 ${(isLearned || isUserCorrected) ? '' : 'hidden'}" title="Đã học theo quy tắc AI">AI</span>
+                        <span class="user-edit-badge text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-sky-900/60 text-sky-300 border border-sky-600/70 shrink-0 ${isUserCorrected ? '' : 'hidden'}" title="Người dùng đã chỉnh sửa thủ công"><i class="fa-solid fa-pen text-[9px] mr-1"></i>Đã sửa</span>
+                        <span class="ai-learned-badge text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-900/60 text-amber-300 border border-amber-600/70 shrink-0 ${isLearned ? '' : 'hidden'}" title="Đã áp dụng quy tắc AI học được"><i class="fa-solid fa-robot text-[9px] mr-1"></i>AI</span>
                         ${row.is_ai_vision ? `<span class="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-purple-900/70 text-purple-300 border border-purple-500/80 shrink-0 shadow-sm" title="Đã bóc tách bằng AI Vision">Vision</span>` : ''}
                     </div>
+                </td>
+                <td class="py-3 px-3">
+                    <span class="editable-cell font-mono text-xs text-slate-300 bg-slate-950/60 px-2 py-1 rounded border border-slate-800/90 block truncate max-w-[150px] hover:bg-slate-750 transition cursor-text shadow-inner" contenteditable="true" data-field="raw_text" title="Văn bản gốc OCR: ${(row.raw_text || '').replace(/"/g, '&quot;')}">${row.raw_text || '-'}</span>
                 </td>
                 <td class="py-3 px-2 text-center whitespace-nowrap">
                     <div class="row-actions flex items-center justify-center space-x-1.5">
@@ -1838,51 +1992,93 @@ document.addEventListener('DOMContentLoaded', () => {
                         row[field] = newVal;
                         row.user_corrected = true; // Danh dau user da tu tay sua
 
-                        // Dong bo logic: Neu sua nominal_str thi parse lai float
-                        if (field === 'nominal_str') {
-                            const parsedNum = parseFloat(newVal.replace(',', '.'));
-                            row.nominal = isNaN(parsedNum) ? null : Math.abs(parsedNum);
-                        }
+                        // Dong bo logic: Neu sua raw_text thi goi API phan tich lai toan bo row
+                        if (field === 'raw_text') {
+                            try {
+                                const parseResp = await fetch('/api/parse-text', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        raw_text: newVal,
+                                        global_constraints: state.globalConstraints
+                                    })
+                                });
+                                if (parseResp.ok) {
+                                    const parsed = await parseResp.json();
+                                    if (parsed && parsed.success) {
+                                        row.nominal = parsed.nominal;
+                                        row.nominal_str = parsed.nominal_str;
+                                        row.upper_tol = parsed.upper_tol || '';
+                                        row.lower_tol = parsed.lower_tol || '';
+                                        row.full_callout = parsed.full_callout;
+                                        if (parsed.qty) row.qty = parsed.qty;
+                                        if (parsed.prefix) row.prefix = parsed.prefix;
+                                        if (parsed.suffix) row.suffix = parsed.suffix;
 
-                        // Cap nhat lai chuoi callout tong the
-                        updateRowCallout(row);
+                                        // Cap nhat text tren cac o DOM tuong ung
+                                        const nomCell = tr.querySelector('[data-field="nominal_str"]');
+                                        if (nomCell) nomCell.textContent = row.nominal_str || '-';
+                                        const upCell = tr.querySelector('[data-field="upper_tol"]');
+                                        if (upCell) upCell.textContent = row.upper_tol || '-';
+                                        const lowCell = tr.querySelector('[data-field="lower_tol"]');
+                                        if (lowCell) lowCell.textContent = row.lower_tol || '-';
+                                        const calloutCell = tr.querySelector('[data-field="full_callout"]');
+                                        if (calloutCell) calloutCell.textContent = row.full_callout || '-';
 
-                        // Hien thi badge AI Learned
-                        const badge = tr.querySelector('.ai-learned-badge');
-                        if (badge) badge.classList.remove('hidden');
-
-                        // Cap nhat text tren o Callout
-                        const calloutCell = tr.querySelector('[data-field="full_callout"]');
-                        if (calloutCell) calloutCell.textContent = row.full_callout;
-
-                        // =========================================================
-                        // REAL-TIME FEEDBACK LOOP: Day ngay quy tac sua len Backend
-                        // =========================================================
-                        try {
-                            const resp = await fetch('/api/feedback/submit', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                    raw_text: row.raw_text,
-                                    corrected: {
-                                        qty: row.qty || '',
-                                        prefix: row.prefix || '',
-                                        nominal: row.nominal,
-                                        nominal_str: row.nominal_str,
-                                        upper_tol: row.upper_tol === '-' ? '' : row.upper_tol,
-                                        lower_tol: row.lower_tol === '-' ? '' : row.lower_tol,
-                                        tol_type: 'user_defined',
-                                        full_callout: row.full_callout
+                                        showToast(`⚡ Đã phân tích lại: ${row.full_callout}`, 'success');
                                     }
-                                })
-                            });
-                            if (resp.ok) {
-                                showToast(`💡 AI đã ghi nhớ quy tắc: "${row.raw_text.replace(/\n/g, ' ')}" ➔ ${row.full_callout}`, 'adaptive');
-                                updateAdaptiveCount();
+                                }
+                            } catch (e) {
+                                console.error('Lỗi phân tích lại raw_text:', e);
                             }
-                        } catch (err) {
-                            console.log('Loi gui feedback thich ung:', err);
+                        } else {
+                            // Dong bo logic: Neu sua nominal_str thi parse lai float
+                            if (field === 'nominal_str') {
+                                const parsedNum = parseFloat(newVal.replace(',', '.'));
+                                row.nominal = isNaN(parsedNum) ? null : Math.abs(parsedNum);
+                            }
+
+                            // Cap nhat lai chuoi callout tong the
+                            updateRowCallout(row);
+
+                            // Cap nhat text tren o Callout
+                            const calloutCell = tr.querySelector('[data-field="full_callout"]');
+                            if (calloutCell) calloutCell.textContent = row.full_callout;
+
+                            // =========================================================
+                            // REAL-TIME FEEDBACK LOOP: Day ngay quy tac sua len Backend
+                            // Chi gui khi user sua ket qua (nominal / tol / callout)
+                            // =========================================================
+                            try {
+                                const resp = await fetch('/api/feedback/correct', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        raw_text: row.raw_text,
+                                        corrected: {
+                                            qty: row.qty || '',
+                                            prefix: row.prefix || '',
+                                            nominal: row.nominal,
+                                            nominal_str: row.nominal_str,
+                                            upper_tol: row.upper_tol === '-' ? '' : row.upper_tol,
+                                            lower_tol: row.lower_tol === '-' ? '' : row.lower_tol,
+                                            tol_type: 'user_defined',
+                                            full_callout: row.full_callout
+                                        }
+                                    })
+                                });
+                                if (resp.ok) {
+                                    showToast(`💡 AI đã ghi nhớ quy tắc: "${row.raw_text.replace(/\n/g, ' ')}" ➔ ${row.full_callout}`, 'adaptive');
+                                    updateAdaptiveCount();
+                                }
+                            } catch (err) {
+                                console.log('Loi gui feedback thich ung:', err);
+                            }
                         }
+
+                        // Hien thi badge Da sua
+                        const badge = tr.querySelector('.user-edit-badge');
+                        if (badge) badge.classList.remove('hidden');
                     }
                 });
             });
@@ -1890,6 +2086,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Delete row
             tr.querySelector('.delete-btn').addEventListener('click', (e) => {
                 e.stopPropagation();
+                pushUndoState();
                 state.rows.splice(originalIdx, 1);
                 if (state.selectedRowId === row.id) {
                     state.selectedRowId = null;
@@ -2039,6 +2236,7 @@ document.addEventListener('DOMContentLoaded', () => {
     clearAllBtn.addEventListener('click', () => {
         if (state.rows.length === 0) return;
         if (confirm('Bạn có chắc muốn xóa toàn bộ danh sách kích thước đã quét?')) {
+            pushUndoState();
             state.rows = [];
             renderTable();
             render();
@@ -2549,6 +2747,226 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // ==============================================================================
+    // OCR DEVICE MANAGEMENT (GPU DirectML / CPU)
+    // ==============================================================================
+    async function checkOcrDeviceStatus() {
+        try {
+            const resp = await fetch('/api/ocr/device');
+            const data = await resp.json();
+            state.ocrDevice = data.current_device || 'cpu';
+            state.dmlAvailable = !!data.dml_available;
+            state.gpuName = data.gpu_name || '';
+            updateOcrDeviceUI();
+        } catch (e) {
+            console.error('Lỗi checkOcrDeviceStatus:', e);
+        }
+    }
+
+    function updateOcrDeviceUI() {
+        const isGpu = state.ocrDevice === 'gpu';
+
+        if (ocrDeviceLabel) {
+            ocrDeviceLabel.textContent = isGpu ? 'GPU' : 'CPU';
+            ocrDeviceLabel.className = isGpu ? 'text-[11px] font-bold text-emerald-400' : 'text-[11px] font-bold text-blue-400';
+        }
+        if (ocrDeviceIcon) {
+            ocrDeviceIcon.className = isGpu ? 'fa-solid fa-microchip text-emerald-400 text-xs' : 'fa-solid fa-server text-blue-400 text-xs';
+        }
+        if (ocrDeviceToggleBtn) {
+            if (isGpu) {
+                ocrDeviceToggleBtn.title = `Thiết bị OCR: GPU (${state.gpuName || 'DirectML'}). Bấm để chuyển sang CPU`;
+                ocrDeviceToggleBtn.classList.remove('border-blue-500/50', 'text-blue-300');
+                ocrDeviceToggleBtn.classList.add('border-emerald-500/50', 'text-emerald-300');
+            } else {
+                ocrDeviceToggleBtn.title = `Thiết bị OCR: CPU (Đa luồng). Bấm để chuyển sang GPU (${state.gpuName || 'DirectML'})`;
+                ocrDeviceToggleBtn.classList.remove('border-emerald-500/50', 'text-emerald-300');
+                ocrDeviceToggleBtn.classList.add('border-blue-500/50', 'text-blue-300');
+            }
+        }
+        if (ocrDeviceSelect) {
+            ocrDeviceSelect.value = state.ocrDevice;
+        }
+        if (ocrGpuNameDisplay) {
+            ocrGpuNameDisplay.textContent = state.gpuName || (state.dmlAvailable ? 'DirectML GPU' : 'Không khả dụng');
+            ocrGpuNameDisplay.title = state.gpuName;
+        }
+        if (ocrSettingsDmlBadge) {
+            if (state.dmlAvailable) {
+                ocrSettingsDmlBadge.className = 'bg-emerald-900/60 text-emerald-300 border border-emerald-600/60 text-[10px] font-mono px-1.5 py-0.5 rounded';
+                ocrSettingsDmlBadge.textContent = 'DirectML Ready (16GB)';
+            } else {
+                ocrSettingsDmlBadge.className = 'bg-amber-900/60 text-amber-300 border border-amber-600/60 text-[10px] font-mono px-1.5 py-0.5 rounded';
+                ocrSettingsDmlBadge.textContent = 'CPU Only';
+            }
+        }
+    }
+
+    async function switchOcrDevice(targetDevice) {
+        try {
+            const resp = await fetch('/api/ocr/device', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ device: targetDevice })
+            });
+            const data = await resp.json();
+            if (!resp.ok || !data.success) {
+                throw new Error(data.error || 'Không thể chuyển đổi thiết bị OCR');
+            }
+
+            state.ocrDevice = data.current_device;
+            state.gpuName = data.gpu_name || state.gpuName;
+            updateOcrDeviceUI();
+
+            if (state.ocrDevice === 'gpu') {
+                showToast(`🚀 Đã chuyển sang tăng tốc bằng GPU (${state.gpuName})!`, 'success');
+            } else {
+                showToast(`💻 Đã chuyển sang xử lý bằng CPU (Đa luồng)!`, 'info');
+            }
+        } catch (err) {
+            console.error('Lỗi switchOcrDevice:', err);
+            showToast(`❌ ${err.message}`, 'error');
+        }
+    }
+
+    if (ocrDeviceToggleBtn) {
+        ocrDeviceToggleBtn.addEventListener('click', () => {
+            if (!state.dmlAvailable && state.ocrDevice === 'cpu') {
+                showToast('⚠️ GPU DirectML không khả dụng trên hệ thống này', 'warning');
+                return;
+            }
+            const next = (state.ocrDevice === 'gpu') ? 'cpu' : 'gpu';
+            switchOcrDevice(next);
+        });
+    }
+
+    if (ocrDeviceSelect) {
+        ocrDeviceSelect.addEventListener('change', (e) => {
+            switchOcrDevice(e.target.value);
+        });
+    }
+
+    // Local AI Auto-Scan entire drawing page (PP-OCRv6 Offline, No API Key needed)
+    if (localAutoScanBtn) {
+        localAutoScanBtn.addEventListener('click', async () => {
+            if (!state.fileId) {
+                alert('Vui lòng mở hoặc tải bản vẽ PDF trước khi dùng Local Auto-Scan!');
+                return;
+            }
+
+            const devLabel = state.ocrDevice === 'gpu' ? `GPU (${state.gpuName || 'DirectML'})` : 'CPU';
+            loadingText.textContent = `⚡ AI Local [${devLabel}] đang phân tích và định vị kích thước...`;
+            loadingOverlay.classList.remove('hidden');
+
+            try {
+                const resp = await fetch('/api/local-auto-scan', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        file_id: state.fileId,
+                        page_num: state.currentPage,
+                        page_rotation: state.pageRotation
+                    })
+                });
+                const data = await resp.json();
+                if (!resp.ok || !data.success) {
+                    throw new Error(data.error || 'Lỗi khi Local Auto-Scan');
+                }
+
+                const dims = data.dimensions || [];
+                if (dims.length === 0) {
+                    showToast('AI Local không phát hiện kích thước nào trên trang này', 'info');
+                    return;
+                }
+
+                showToast(`⚡ AI Local đã phát hiện ${dims.length} cụm kích thước! Đang bóc tách chi tiết...`, 'info');
+
+                pushUndoState();
+
+                let addedCount = 0;
+                let completedCount = 0;
+
+                const processSingleDim = async (d) => {
+                    try {
+                        const cropResp = await fetch('/api/crop-ocr', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                file_id: state.fileId,
+                                page_num: state.currentPage,
+                                crop_box: d.crop_box,
+                                global_constraints: state.globalConstraints,
+                                page_rotation: state.pageRotation,
+                                crop_rotation: 0
+                            })
+                        });
+                        const cropData = await cropResp.json();
+                        if (cropResp.ok && (cropData.nominal_str || cropData.raw_text)) {
+                            const newBox = d.box || cropData.box;
+                            const existingRow = state.rows.find(r => 
+                                r.page === state.currentPage && 
+                                r.raw_box && 
+                                calculateBoxOverlap(newBox, r.raw_box) > 0.5
+                            );
+
+                            const rowPayload = {
+                                thumbnail: cropData.thumbnail,
+                                qty: cropData.qty || '',
+                                prefix: cropData.prefix || '',
+                                nominal: cropData.nominal,
+                                nominal_str: cropData.nominal_str || (cropData.nominal !== null ? String(cropData.nominal) : ''),
+                                upper_tol: cropData.upper_tol || '',
+                                lower_tol: cropData.lower_tol || '',
+                                tol_type: cropData.tol_type || 'local',
+                                full_callout: cropData.full_callout || cropData.raw_text || d.label,
+                                raw_text: cropData.raw_text || d.label || '',
+                                raw_box: d.box,
+                                box: cropData.box || d.box,
+                                norm_box: d.crop_box,
+                                crop_rotation: 0,
+                                is_auto_detected: true
+                            };
+
+                            if (existingRow) {
+                                Object.assign(existingRow, rowPayload);
+                            } else {
+                                const newRow = {
+                                    id: state.rows.length + 1,
+                                    page: state.currentPage,
+                                    ...rowPayload
+                                };
+                                state.rows.push(newRow);
+                                addedCount++;
+                            }
+                        }
+                    } catch (e) {
+                        console.error('Lỗi bóc tách ô crop local:', e);
+                    } finally {
+                        completedCount++;
+                        loadingText.textContent = `⚡ Đang bóc tách chi tiết: ${completedCount}/${dims.length} kích thước...`;
+                    }
+                };
+
+                const CONCURRENCY_LIMIT = 6;
+                for (let i = 0; i < dims.length; i += CONCURRENCY_LIMIT) {
+                    const batch = dims.slice(i, i + CONCURRENCY_LIMIT);
+                    await Promise.all(batch.map(d => processSingleDim(d)));
+                    renderTable(true, state.rows.length - 1);
+                    render();
+                }
+
+                showToast(`🎉 Local Auto-Scan hoàn tất: Đã nhận diện thành công ${addedCount} kích thước!`, 'success');
+            } catch (err) {
+                console.error('Lỗi Local Auto-Scan:', err);
+                showToast(`❌ Lỗi Local Auto-Scan: ${err.message}`, 'error');
+            } finally {
+                loadingOverlay.classList.add('hidden');
+                renderTable();
+                render();
+            }
+        });
+    }
+
     // AI Vision Auto-Scan entire drawing page
     if (aiAutoScanBtn) {
         aiAutoScanBtn.addEventListener('click', async () => {
@@ -2582,6 +3000,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
                 showToast(`🤖 AI Vision đã phát hiện ${dims.length} kích thước! Đang bóc tách chi tiết...`, 'info');
+
+                pushUndoState();
 
                 let addedCount = 0;
                 let completedCount = 0;
@@ -2673,6 +3093,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Init AI status on startup
     checkAiVisionStatus();
+
+    // Init OCR Device status (GPU DirectML / CPU)
+    checkOcrDeviceStatus();
 
     // Init adaptive count on startup
     updateAdaptiveCount();

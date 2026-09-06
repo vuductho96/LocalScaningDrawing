@@ -29,7 +29,7 @@ class AdaptiveLearner:
                     {
                         "id": "rule_dms_angle",
                         "name": "Kích thước góc độ DMS (Độ Phút Giây)",
-                        "pattern": r"^([0-9]+(?:\.[0-9]+)?)[°\u3002]\s*(?:([0-9]+(?:\.[0-9]+)?)(?:[\x27\u2019\'])\s*)?(?:([0-9]+(?:\.[0-9]+)?)(?:[\x22\u201D\"]))?$",
+                        "pattern": r"^([0-9]+(?:\.[0-9]+)?)[°\u3002].*$",
                         "type": "angle",
                         "user_defined": False
                     }
@@ -87,29 +87,35 @@ class AdaptiveLearner:
                 if m:
                     rule_type = rule.get("type", "custom")
                     if rule_type == "angle":
-                        deg = m.group(1)
-                        minute = m.group(2) if m.lastindex and m.lastindex >= 2 else None
-                        second = m.group(3) if m.lastindex and m.lastindex >= 3 else None
-                        parts = [f"{deg}°"]
-                        if minute:
-                            parts.append(f"{minute}'")
-                        if second:
-                            parts.append(f'{second}"')
-                        callout = "".join(parts)
-                        return {
-                            "success": True,
-                            "raw_text": raw_text,
-                            "qty": "",
-                            "prefix": "",
-                            "nominal": callout,
-                            "nominal_str": callout,
-                            "upper_tol": "",
-                            "lower_tol": "",
-                            "tol_type": "angle",
-                            "suffix": "",
-                            "full_callout": callout,
-                            "source": f"adaptive_rule:{rule.get('name', 'custom')}"
-                        }
+                        dms_info = ToleranceParser.parse_dms_components(clean)
+                        if dms_info:
+                            callout = dms_info["callout"]
+                            u_tol = dms_info["upper_tol"]
+                            l_tol = dms_info["lower_tol"]
+                            full_callout = callout
+                            if u_tol and l_tol:
+                                if u_tol == l_tol.replace('-', '+'):
+                                    full_callout += f" ±{u_tol.replace('+', '')}"
+                                else:
+                                    full_callout += f" {u_tol}/{l_tol}"
+                            elif u_tol:
+                                full_callout += f" {u_tol}"
+                            elif l_tol:
+                                full_callout += f" {l_tol}"
+                            return {
+                                "success": True,
+                                "raw_text": raw_text,
+                                "qty": "",
+                                "prefix": "",
+                                "nominal": callout,
+                                "nominal_str": callout,
+                                "upper_tol": u_tol,
+                                "lower_tol": l_tol,
+                                "tol_type": dms_info["tol_type"],
+                                "suffix": "",
+                                "full_callout": full_callout,
+                                "source": f"adaptive_rule:{rule.get('name', 'custom')}"
+                            }
                     elif rule_type == "split_tokens":
                         # Xu ly cac cum so wildcard bat ky (vi du: 5 0 5 -0.02, 10 0 2 -0.05, 3 +0.02 1 1 0)
                         groups = [g for g in m.groups() if g is not None]
@@ -356,6 +362,134 @@ class ToleranceParser:
         re.IGNORECASE
     )
 
+    @classmethod
+    def parse_dms_components(cls, text: str) -> Optional[Dict[str, Any]]:
+        """
+        Phân tích chuỗi góc độ DMS (Độ Phút Giây):
+        - Chuỗi dính liền / thiếu ký hiệu: 4°3023°, 4°3023, 4° 3023°, 4°3023", 4°30°
+        - Chuỗi đầy đủ ký hiệu: 4°30'23", 4° 30' 23", 45°30', 4°30'23''
+        - Dung sai góc: 4°3023° ± 10', 4°30'23" ± 0.5°, 4°3023° +10' -5'
+        Quy tắc nghiêm ngặt:
+        - Phút (minutes): tối đa 60' (0 <= minute <= 60)
+        - Giây (seconds): tối đa 60'' (0 <= second <= 60)
+        """
+        if not text or ('°' not in text and '\u3002' not in text):
+            return None
+
+        t = text.strip()
+        t = re.sub(r'[\u2018\u2019\u2032`]', "'", t)
+        t = re.sub(r'[\u201C\u201D\u2033]|\x27\x27|\u2019\u2019', '"', t)
+
+        m_deg = re.search(r'([0-9]+(?:\.[0-9]+)?)[°\u3002]\s*(.*)$', t)
+        if not m_deg:
+            return None
+
+        deg_str = m_deg.group(1)
+        rest = m_deg.group(2).strip()
+
+        # Kiểm tra dung sai kèm theo (ví dụ: ± 0.5°, ± 10', ± 30", +10' -5')
+        upper_tol = ""
+        lower_tol = ""
+        tol_type = "angle"
+
+        tol_sym_match = re.search(r'\s*[±]\s*([0-9]+(?:\.[0-9]+)?)\s*([°\x27\"\u3002]?)', rest)
+        if tol_sym_match:
+            tol_num = float(tol_sym_match.group(1))
+            tol_str = f"{int(tol_num)}" if tol_num.is_integer() else f"{tol_num}"
+            tol_unit = tol_sym_match.group(2) or '°'
+            unit_sym = "'" if tol_unit in ["'", '’'] else ('"' if tol_unit in ['"', '”'] else '°')
+            upper_tol = f"+{tol_str}{unit_sym}"
+            lower_tol = f"-{tol_str}{unit_sym}"
+            tol_type = "angle_tol"
+            rest = rest[:tol_sym_match.start()].strip()
+        else:
+            tol_asym_match = re.search(r'\s*([+]\s*[0-9]+(?:\.[0-9]+)?\s*[°\x27\"\u3002]?)\s*([-]\s*[0-9]+(?:\.[0-9]+)?\s*[°\x27\"\u3002]?)', rest)
+            if tol_asym_match:
+                upper_tol = re.sub(r'\s+', '', tol_asym_match.group(1))
+                lower_tol = re.sub(r'\s+', '', tol_asym_match.group(2))
+                tol_type = "angle_tol"
+                rest = rest[:tol_asym_match.start()].strip()
+
+        minute = None
+        second = None
+
+        if rest:
+            # Case 1: Có ký hiệu phút hoặc giây rõ ràng: 30'23", 30' 23", 30'23°, 30'
+            m_explicit = re.match(r'^([0-9]+(?:\.[0-9]+)?)\s*[\x27\']\s*(?:([0-9]+(?:\.[0-9]+)?)\s*[\x22\"°\']?)?$', rest)
+            if m_explicit:
+                m_val = float(m_explicit.group(1))
+                s_val = float(m_explicit.group(2)) if m_explicit.group(2) else None
+                if 0 <= m_val <= 60 and (s_val is None or 0 <= s_val <= 60):
+                    minute = m_explicit.group(1)
+                    second = m_explicit.group(2)
+            else:
+                # Case 2: Dạng phân tách bởi dấu cách: 30 23, 30 23", 30 23°
+                m_space = re.match(r'^([0-9]+(?:\.[0-9]+)?)\s+([0-9]+(?:\.[0-9]+)?)\s*[\x22\"°\']?$', rest)
+                if m_space:
+                    m_val = float(m_space.group(1))
+                    s_val = float(m_space.group(2))
+                    if 0 <= m_val <= 60 and 0 <= s_val <= 60:
+                        minute = m_space.group(1)
+                        second = m_space.group(2)
+                else:
+                    # Case 3: Dạng dính liền các chữ số: 3023°, 3023, 3023", 30°, 30
+                    clean_digits = re.sub(r'[°\'\"\s]+$', '', rest).strip()
+                    if re.match(r'^[0-9]+(?:\.[0-9]+)?$', clean_digits):
+                        int_part = clean_digits.split('.')[0]
+                        # 4 chữ số (ví dụ: 3023 hoặc 3023.5) -> MM = 30, SS = 23 (hoặc 23.5)
+                        if len(int_part) >= 4:
+                            m_cand = clean_digits[:2]
+                            s_cand = clean_digits[2:]
+                            try:
+                                m_val = float(m_cand)
+                                s_val = float(s_cand)
+                                if 0 <= m_val <= 60 and 0 <= s_val <= 60:
+                                    minute = m_cand
+                                    second = s_cand
+                            except ValueError:
+                                pass
+                        # 3 chữ số (ví dụ: 523) -> M = 5, SS = 23
+                        elif len(int_part) == 3:
+                            m_cand = clean_digits[0]
+                            s_cand = clean_digits[1:]
+                            try:
+                                m_val = float(m_cand)
+                                s_val = float(s_cand)
+                                if 0 <= m_val <= 60 and 0 <= s_val <= 60:
+                                    minute = m_cand
+                                    second = s_cand
+                            except ValueError:
+                                pass
+                        # 1 hoặc 2 chữ số (ví dụ: 30 hoặc 5 từ 4°30° hoặc 4°30)
+                        elif len(int_part) in [1, 2]:
+                            try:
+                                m_val = float(clean_digits)
+                                if 0 <= m_val <= 60:
+                                    minute = clean_digits
+                            except ValueError:
+                                pass
+
+        parts = [f"{deg_str}°"]
+        total_deg = float(deg_str)
+        if minute is not None:
+            parts.append(f"{minute}'")
+            total_deg += float(minute) / 60.0
+        if second is not None:
+            parts.append(f'{second}"')
+            total_deg += float(second) / 3600.0
+
+        callout = "".join(parts)
+        return {
+            "deg": deg_str,
+            "minute": minute,
+            "second": second,
+            "callout": callout,
+            "total_deg": round(total_deg, 4),
+            "upper_tol": upper_tol,
+            "lower_tol": lower_tol,
+            "tol_type": tol_type
+        }
+
     def __init__(self, global_constraints=None):
         """
         global_constraints format:
@@ -487,48 +621,22 @@ class ToleranceParser:
         clean_text = re.sub(r'[\u2018\u2019\u2032`]', "'", clean_text)
         clean_text = re.sub(r'[\u201C\u201D\u2033]|\x27\x27|\u2019\u2019', '"', clean_text)
 
-        # Check Kich thuoc goc do (Angular Dimensions):
-        # 1. Degree-Minute-Second: 4°30'23", 4° 30' 23", 45°30', 0°10'36"
-        dms_match = re.search(r'([0-9]+(?:\.[0-9]+)?)[°\u3002]\s*(?:([0-9]+(?:\.[0-9]+)?)(?:[\x27\'])\s*)?(?:([0-9]+(?:\.[0-9]+)?)(?:[\x22\"]))?', clean_text)
-        if dms_match and ('°' in clean_text or '\u3002' in clean_text) and not any(c in clean_text for c in ['±', '+', '-']):
-            deg = dms_match.group(1)
-            minute = dms_match.group(2)
-            second = dms_match.group(3)
-            parts = [f"{deg}°"]
-            total_deg = float(deg)
-            if minute:
-                parts.append(f"{minute}'")
-                total_deg += float(minute) / 60.0
-            if second:
-                parts.append(f'{second}"')
-                total_deg += float(second) / 3600.0
-            
-            ang_callout = "".join(parts)
-            return self._build_result(raw_text, qty, prefix, round(total_deg, 4), ang_callout, "", "", "angle", suffix)
-
-        # 2. Goc do kem dung sai: 45° ± 0.5° hoac 45° ± 30' hoac 45°30' ± 15'
-        ang_tol_match = re.search(r'([0-9]+(?:\.[0-9]+)?)[°\u3002]\s*(?:([0-9]+(?:\.[0-9]+)?)(?:[\x27\'])\s*)?(?:([0-9]+(?:\.[0-9]+)?)(?:[\x22\"]))?\s*[±]\s*([0-9]+(?:\.[0-9]+)?)([°\x27\u3002\"])?', clean_text)
-        if ang_tol_match:
-            deg = ang_tol_match.group(1)
-            minute = ang_tol_match.group(2)
-            second = ang_tol_match.group(3)
-            tol_val = float(ang_tol_match.group(4))
-            tol_unit = ang_tol_match.group(5) or '°'
-            unit_sym = "'" if tol_unit in ["'", '’'] else ('"' if tol_unit in ['"', '”'] else '°')
-            
-            parts = [f"{deg}°"]
-            total_deg = float(deg)
-            if minute:
-                parts.append(f"{minute}'")
-                total_deg += float(minute) / 60.0
-            if second:
-                parts.append(f'{second}"')
-                total_deg += float(second) / 3600.0
-            
-            nom_str = "".join(parts)
-            up_str = f"+{tol_val}{unit_sym}"
-            down_str = f"-{tol_val}{unit_sym}"
-            return self._build_result(raw_text, qty, prefix, round(total_deg, 4), nom_str, up_str, down_str, "angle_tol", suffix)
+        # Check Kich thuoc goc do (Angular Dimensions / DMS):
+        # Ho tro day du: 4°30'23", 4°3023°, 4°3023, 4° 30 23, 4°30°, 4°30', 45°, 4°3023° ± 10', v.v.
+        # Quy tac nghiem ngat: Phut <= 60', Giay <= 60''
+        dms_info = self.parse_dms_components(clean_text)
+        if dms_info:
+            return self._build_result(
+                raw_text,
+                qty,
+                prefix,
+                dms_info["total_deg"],
+                dms_info["callout"],
+                dms_info["upper_tol"],
+                dms_info["lower_tol"],
+                dms_info["tol_type"],
+                suffix
+            )
 
         # Chuan hoa chuoi de nhan dien so (Clean common OCR artifacts in technical drawings)
         norm_text = clean_text
@@ -540,10 +648,38 @@ class ToleranceParser:
         norm_text = re.sub(r'\b([1-9][0-9]*)\s+([0-9]{2})\b(?=\s+0|\s*[-+±]|\s*$)', r'\1.\2', norm_text)
 
         # Em-dash / en-dash / dash giua cac chu so trong phan nominal (chuyen thanh dau cham thap phan)
-        norm_text = re.sub(r'\b([1-9][0-9]*)\s*' + dashes_regex + r'\s*0([0-9]+)\b(?!\.[0-9])', r'\1.0\2', norm_text)
-        norm_text = re.sub(r'\b([1-9][0-9]*)\s*' + dashes_regex + r'\s*([0-9]+)\b(?!\.[0-9])(?=\s*[+-±]|\s+0(?:\.0*)?\s*[-+])', r'\1.\2', norm_text)
-        norm_text = re.sub(r'\b([1-9][0-9]*)\s*[—–―~_]\s*([0-9]+)\b(?!\.[0-9])', r'\1.\2', norm_text)
+        norm_text = re.sub(r'(?<!\.)\b([1-9][0-9]*)\s*' + dashes_regex + r'\s*0([0-9]+)\b(?!\.[0-9])', r'\1.0\2', norm_text)
+        norm_text = re.sub(r'(?<!\.)\b([1-9][0-9]*)\s*' + dashes_regex + r'\s*([0-9]+)\b(?!\.[0-9])(?=\s*[+-±]|\s+0(?:\.0*)?\s*[-+])', r'\1.\2', norm_text)
+        norm_text = re.sub(r'(?<!\.)\b([1-9][0-9]*)\s*[—–―~_]\s*([0-9]+)\b(?!\.[0-9])', r'\1.\2', norm_text)
         norm_text = re.sub(r'\b1\.3\b(?=\s*\+0\.02)', '1.13', norm_text)
+
+        # Xu ly dau +/- dung sau so (trailing sign do thu tu doc OCR bi nguoc, e.g. 1000+ -> +1000, 0.001+ -> +0.001, 1000- -> -1000)
+        norm_text = re.sub(r'(?<![0-9])([0-9]+(?:\.[0-9]+)?)\s*([—–―‐‑‒−－\-+]|\+\/\-)(?=\s|$)', lambda m: ('±' if '/' in m.group(2) else ('-' if m.group(2) in '—–―‐‑‒−－-' else '+')) + m.group(1), norm_text)
+
+        # Neu trong chuoi co dung sai 3 chu so thap phan (+-0.00X hoac 0.00X):
+        # Cac token dang +1000, -1000, +0001, -0001 thuc chat la +-0.001 bi mat dau cham hoac doc nguoc tu ban ve
+        if re.search(r'[+-]?0\.00[0-9]', norm_text):
+            norm_text = re.sub(r'([+-])(?:1000|0001)\b', r'\g<1>0.001', norm_text)
+            norm_text = re.sub(r'([+-])(?:2000|0002)\b', r'\g<1>0.002', norm_text)
+            norm_text = re.sub(r'([+-])(?:3000|0003)\b', r'\g<1>0.003', norm_text)
+            norm_text = re.sub(r'([+-])(?:4000|0004)\b', r'\g<1>0.004', norm_text)
+            norm_text = re.sub(r'([+-])(?:5000|0005)\b', r'\g<1>0.005', norm_text)
+            norm_text = re.sub(r'([+-])(?:8000|0008)\b', r'\g<1>0.008', norm_text)
+        elif re.search(r'[+-]?0\.0[0-9]', norm_text):
+            norm_text = re.sub(r'([+-])(?:100|001)\b', r'\g<1>0.01', norm_text)
+            norm_text = re.sub(r'([+-])(?:200|002)\b', r'\g<1>0.02', norm_text)
+            norm_text = re.sub(r'([+-])(?:500|005)\b', r'\g<1>0.05', norm_text)
+
+        # Xu ly stacked unilateral tolerance bi OCR tron giua so 0 va so thap phan:
+        # e.g. -0.0-1 -> 0 -0.01, -0.0-2 -> 0 -0.02, -0.0-5 -> 0 -0.05
+        # e.g. -0.00-1 -> 0 -0.001, -0.00-8 -> 0 -0.008
+        # e.g. +0.0+1 -> 0 +0.01, +0.00+1 -> 0 +0.001
+        norm_text = re.sub(r'[-+]?0\.(0+)\s*[-–—]\s*([1-9][0-9]?)\b', r' 0 -0.\1\2', norm_text)
+        norm_text = re.sub(r'[-+]?0\.(0+)\s*\+\s*([1-9][0-9]?)\b', r' 0 +0.\1\2', norm_text)
+        norm_text = re.sub(r'(?<=\.[0-9]{2})\s*[-+]?0\s*[-–—]\s*([1-9])\b', r' 0 -0.0\1', norm_text)
+        norm_text = re.sub(r'(?<=\.[0-9]{2})\s*[-+]?0\s*\+\s*([1-9])\b', r' 0 +0.0\1', norm_text)
+        norm_text = re.sub(r'(?<=\.[0-9]{3})\s*[-+]?0\s*[-–—]\s*([1-9])\b', r' 0 -0.00\1', norm_text)
+        norm_text = re.sub(r'(?<=\.[0-9]{3})\s*[-+]?0\s*\+\s*([1-9])\b', r' 0 +0.00\1', norm_text)
 
         # Loc cac ky tu rac tu CAD drawing (leader lines, extension lines, em-dash, tilde, bar)
         # Bao ve dung sai am (nhu -0.01, -0.02) khong bi xoa mat dau tru
@@ -583,6 +719,11 @@ class ToleranceParser:
         # Ghep chu so bi tach roi voi phan thap phan (e.g. 4 1.42 -> 41.42, 4 1 42 -> 41.42)
         norm_text = re.sub(r'\b([1-9])\s+([0-9]\.[0-9]+)\b(?=\s+0|\s*[-+±]|\s*$)', r'\1\2', norm_text)
         norm_text = re.sub(r'\b([1-9])\s+([0-9])\s+([0-9]{2})\b(?=\s+0|\s*[-+±]|\s*$)', r'\1\2.\3', norm_text)
+        # Ghep cac chu so nguyen bi tach roi boi khoang trang truoc dung sai (e.g. 5 2 ±0.01 -> 52 ±0.01, 1 0 5 ±0.05 -> 105 ±0.05)
+        prev_norm = ""
+        while prev_norm != norm_text:
+            prev_norm = norm_text
+            norm_text = re.sub(r'\b([0-9]+)\s+([0-9]+)(?=\s*[±]|\s*[-+]\s*[0-9])', r'\1\2', norm_text)
         norm_text = re.sub(r'\bC\s*[Oo0]\.([0-9]+)\b', r'C 0.\1', norm_text)
         norm_text = re.sub(r'\b[Oo]\.([0-9]+)\b', r'0.\1', norm_text)
         norm_text = re.sub(r'[○◯OОo]\s*°', '0°', norm_text)
@@ -663,9 +804,18 @@ class ToleranceParser:
             t1 = float(mm_match.group(2))
             t2 = float(mm_match.group(3))
             if nom_val > max(t1, t2):
-                # Dai so: -0.1 lon hon -0.2
-                upper = f"-{min(t1, t2)}"
-                lower = f"-{max(t1, t2)}"
+                min_t = min(t1, t2)
+                max_t = max(t1, t2)
+                if min_t == 0.0:
+                    upper = "0"
+                    if '.' in nom_str and len(nom_str.split('.')[1]) == 2 and max_t in [1.0, 2.0, 5.0]:
+                        max_t = max_t / 100.0
+                    elif '.' in nom_str and len(nom_str.split('.')[1]) == 3 and max_t in [1.0, 2.0, 3.0, 5.0, 8.0]:
+                        max_t = max_t / 1000.0
+                    lower = f"-{max_t}"
+                else:
+                    upper = f"-{min_t}"
+                    lower = f"-{max_t}"
                 return self._build_result(raw_text, qty, prefix, nom_val, nom_str, upper, lower, "local", suffix)
 
         # --- Pattern C: Dung sai lech khac dau 1 dong: 25 +0.1/-0.05 hoac 25 +0.1 -0.05 ---
@@ -761,6 +911,12 @@ class ToleranceParser:
             if nom_val > t_down:
                 return self._build_result(raw_text, qty, prefix, nom_val, nom_str, "0", f"-{t_down}", "local", suffix)
 
+        # --- Pattern E: Stacked Tolerance nhieu dong (OCR tra ve danh sach dong) ---
+        if len(lines) >= 2:
+            stacked_res = self._parse_multiline_stacked(lines, raw_text, qty, prefix, suffix)
+            if stacked_res:
+                return stacked_res
+
         # 4. Dung sai dung truoc Nominal (vi du doc theo chieu dung: +0.02 0 1.13)
         z4_match = re.search(r'\+\s*([0-9]+(?:\.[0-9]+)?)\s*(?:/|\s+)\s*0(?:\.0*)?\s*(?:/|\s+)\s*([0-9]+(?:\.[0-9]+)?)', norm_text)
         if z4_match:
@@ -787,12 +943,6 @@ class ToleranceParser:
             t_minus = float(single_minus_match.group(2))
             if n_val > t_minus and t_minus <= n_val * 0.25:
                 return self._build_result(raw_text, qty, prefix, n_val, n_str, "0", f"-{t_minus}", "local", suffix)
-
-        # --- Pattern E: Stacked Tolerance nhieu dong (OCR tra ve danh sach dong) ---
-        if len(lines) >= 2:
-            stacked_res = self._parse_multiline_stacked(lines, raw_text, qty, prefix, suffix)
-            if stacked_res:
-                return stacked_res
 
         # --- Pattern F: Limit Dimensions (Min / Max: e.g. 50.05 / 49.95 hoac 49.95 - 50.05) ---
         lim_match = re.search(r'([0-9]+\.[0-9]+)\s*(?:/|\s*-\s*|\s+)\s*([0-9]+\.[0-9]+)', norm_text)
@@ -825,8 +975,18 @@ class ToleranceParser:
                     pass
             
             if parsed_nums:
-                parsed_nums.sort(key=lambda x: abs(x[0]), reverse=True)
-                nominal_raw_val, nominal_raw_str = parsed_nums[0]
+                unsigned_nums = [x for x in parsed_nums if not x[1].startswith('+') and not x[1].startswith('-')]
+                signed_nums = [x for x in parsed_nums if x[1].startswith('+') or x[1].startswith('-')]
+                
+                if unsigned_nums:
+                    unsigned_nums.sort(key=lambda x: abs(x[0]), reverse=True)
+                    nominal_raw_val, nominal_raw_str = unsigned_nums[0]
+                    other_candidates = unsigned_nums[1:]
+                else:
+                    parsed_nums.sort(key=lambda x: abs(x[0]), reverse=True)
+                    nominal_raw_val, nominal_raw_str = parsed_nums[0]
+                    other_candidates = [x for x in parsed_nums if x != parsed_nums[0]]
+
                 # Kich thuoc co khi luon la so duong (dau tru o dau thuong la duong giong hoac leader line)
                 nominal_val = abs(nominal_raw_val)
                 nominal_str = str(nominal_raw_str).lstrip('+-')
@@ -837,7 +997,8 @@ class ToleranceParser:
                         return abs(t_val) < nom
                     return abs(t_val) <= nom * 0.25
 
-                remaining = [x for x in parsed_nums[1:] if is_valid_tol(x[0], nominal_val)]
+                candidates = signed_nums + other_candidates
+                remaining = [x for x in candidates if is_valid_tol(x[0], nominal_val)]
                 
                 if len(remaining) >= 2:
                     t1_val, t1_str = remaining[0]
@@ -946,14 +1107,22 @@ class ToleranceParser:
         up_str = f"+{tol_val}"
         down_str = f"-{tol_val}"
         return self._build_result(raw_text, qty, prefix, nominal_val, nominal_str, up_str, down_str, "global", suffix)
-
     def _build_result(self, raw_text, qty, prefix, nominal_val, nominal_str, upper_str, lower_str, tol_type, suffix):
         if tol_type in ["angle", "angle_tol"]:
-            # Kich thuoc goc do: Giu nguyen dinh dang chuoi do phut giay (vi du: 0°10'36", 45°)
+            # Kich thuoc goc do: Giu nguyen dinh dang chuoi do phut giay (vi du: 0°10'36", 45°, 4°30'23" ± 10')
             callout_parts = []
             if qty: callout_parts.append(qty)
             if prefix and prefix != "C": callout_parts.append(prefix)
             callout_parts.append(nominal_str)
+            if upper_str and lower_str:
+                if upper_str == lower_str.replace('-', '+'):
+                    callout_parts.append(f"±{upper_str.replace('+', '')}")
+                else:
+                    callout_parts.append(f"{upper_str}/{lower_str}")
+            elif upper_str:
+                callout_parts.append(upper_str)
+            elif lower_str:
+                callout_parts.append(lower_str)
             if suffix: callout_parts.append(suffix)
             full_callout = " ".join(callout_parts)
             return {
@@ -963,9 +1132,9 @@ class ToleranceParser:
                 "prefix": prefix,
                 "nominal": nominal_str if nominal_str else nominal_val,
                 "nominal_str": nominal_str,
-                "upper_tol": "",
-                "lower_tol": "",
-                "tol_type": "angle",
+                "upper_tol": upper_str,
+                "lower_tol": lower_str,
+                "tol_type": tol_type if (upper_str or lower_str) else "angle",
                 "suffix": suffix,
                 "full_callout": full_callout
             }
@@ -982,6 +1151,12 @@ class ToleranceParser:
         # 2. TOLERANCE (+/-) LUON LUON CO DAU DANG TRUOC (+ hoac - hoac 0)
         upper_str = str(upper_str).strip()
         lower_str = str(lower_str).strip()
+
+        # Chuan hoa dung sai 0 (khong bao gio xuat hien -0 hay -0.0)
+        if re.match(r'^[+-]?0(?:\.0+)?$', upper_str):
+            upper_str = '0'
+        if re.match(r'^[+-]?0(?:\.0+)?$', lower_str):
+            lower_str = '0'
 
         if upper_str and not upper_str.startswith('+') and not upper_str.startswith('-') and upper_str != '0':
             upper_str = f"+{upper_str}"

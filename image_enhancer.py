@@ -38,8 +38,8 @@ class ImageEnhancer:
             detect_horizontal = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, horizontal_kernel, iterations=1)
             cnts_h, _ = cv2.findContours(detect_horizontal, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             for c in cnts_h:
-                # To trang de xoa net giong ngang
-                cv2.drawContours(cleaned, [c], -1, (255, 255, 255), 3)
+                # To trang de xoa net giong ngang voi do day mong tranh an vao so
+                cv2.drawContours(cleaned, [c], -1, (255, 255, 255), 1)
 
             # 2. Phat hien cac doan thang doc dai (duong giong kich thuoc nam doc)
             # Do dai kernel bang 75% chieu cao o crop
@@ -48,8 +48,8 @@ class ImageEnhancer:
             detect_vertical = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, vertical_kernel, iterations=1)
             cnts_v, _ = cv2.findContours(detect_vertical, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             for c in cnts_v:
-                # To trang de xoa net giong doc
-                cv2.drawContours(cleaned, [c], -1, (255, 255, 255), 3)
+                # To trang de xoa net giong doc voi do day mong tranh an vao so
+                cv2.drawContours(cleaned, [c], -1, (255, 255, 255), 1)
 
             return cleaned
         except Exception:
@@ -147,8 +147,16 @@ class ImageEnhancer:
         """
         Tra ve danh sach cac tuple (pass_name, processed_image_bgr)
         """
-        if img_bgr is None or img_bgr.size == 0:
-            return []
+        passes = []
+
+        # Pass 0: Raw native resolution (1.0x) voi padding nhe (8px)
+        # Day la pass cuc ky quan trong cho cac chu so dung sai nho nam sat duong giong,
+        # tranh bi mo/dinh net do phep phong to hoac mat chu do xoa net.
+        raw_pad = cv2.copyMakeBorder(
+            img_bgr, 8, 8, 8, 8,
+            cv2.BORDER_CONSTANT, value=[255, 255, 255]
+        )
+        passes.append(("raw_native", raw_pad))
 
         # 1. Them padding vien trang de khong bi cat mat dau +- hoac dau cham o mep
         padded = cv2.copyMakeBorder(
@@ -165,7 +173,6 @@ class ImageEnhancer:
         pass_cleaned = ImageEnhancer.clean_leader_lines(pass1_standard)
         gray = cv2.cvtColor(pass_cleaned, cv2.COLOR_BGR2GRAY)
 
-        passes = []
         # Pass 1: Cleaned Leader Lines (Khu triet de cac net gach, mui ten va duong giong)
         passes.append(("edocr2_cleaned", pass_cleaned))
 

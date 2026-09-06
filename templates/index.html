@@ -81,18 +81,11 @@
             
             <!-- Canvas Floating CAD Dock (Gọn gàng & Hiện đại) -->
             <div class="absolute top-3 left-3 z-20 flex items-center glass-dock rounded-xl p-1 space-x-1">
-                <!-- Group Zoom -->
-                <button id="zoomOutBtn" class="p-1.5 text-slate-300 hover:text-white hover:bg-slate-800/80 rounded-lg transition" title="Thu nhỏ (Cuộn chuột xuống)">
-                    <i class="fa-solid fa-minus text-xs"></i>
-                </button>
-                <span id="zoomLevelText" class="text-xs font-mono text-cyan-300 px-1 min-w-[42px] text-center font-medium">100%</span>
-                <button id="zoomInBtn" class="p-1.5 text-slate-300 hover:text-white hover:bg-slate-800/80 rounded-lg transition" title="Phóng to (Cuộn chuột lên)">
-                    <i class="fa-solid fa-plus text-xs"></i>
-                </button>
+                <!-- Group View: Fit to screen & Undo -->
                 <button id="fitScreenBtn" class="p-1.5 text-slate-300 hover:text-white hover:bg-slate-800/80 rounded-lg transition" title="Vừa khung hình (Fit)">
                     <i class="fa-solid fa-expand text-xs"></i>
                 </button>
-                <button id="resetZoomBtn" class="p-1.5 text-slate-300 hover:text-white hover:bg-slate-800/80 rounded-lg transition" title="Khôi phục gốc (1:1)">
+                <button id="undoBtn" class="p-1.5 text-slate-300 hover:text-white hover:bg-slate-800/80 rounded-lg transition" title="Hoàn tác (Phím tắt: Ctrl + Z)">
                     <i class="fa-solid fa-rotate-left text-xs"></i>
                 </button>
                 
@@ -103,7 +96,7 @@
                     <i class="fa-solid fa-hand text-xs"></i>
                 </button>
 
-                <!-- Tool Toggle Tọa độ X, Y (Bấm vào ký hiệu sáng lên là ON, không cần chữ Bật/Tắt) -->
+                <!-- Tool Toggle Tọa độ X, Y -->
                 <button id="toggleShowCoordsBtn" class="px-2 py-1 text-slate-400 hover:text-slate-200 hover:bg-slate-800/80 rounded-lg transition flex items-center justify-center text-xs font-mono font-bold" title="Tọa độ (X, Y): Đang TẮT (Bấm để BẬT)">
                     <span id="coordsBadgeText">XY</span>
                 </button>
@@ -123,31 +116,31 @@
                 
                 <span class="w-px h-4 bg-slate-700/80 mx-1"></span>
 
-                <!-- Menu Xoay Dropdown (Xoay PDF / Xoay Crop) -->
-                <div class="relative">
-                    <button id="rotateMenuBtn" class="p-1.5 text-slate-300 hover:text-white hover:bg-slate-800/80 rounded-lg transition flex items-center gap-1 text-xs" title="Tùy chọn góc xoay bản vẽ & ô crop">
-                        <i class="fa-solid fa-arrows-rotate text-blue-400 text-xs"></i>
-                        <span id="dockRotationIndicator" class="font-mono text-[10px] text-slate-400 font-bold">0°</span>
-                        <i class="fa-solid fa-chevron-down text-[9px] text-slate-500"></i>
-                    </button>
-                    <div id="rotateSubMenu" class="hidden absolute left-0 mt-1.5 w-48 bg-slate-900 border border-slate-700 rounded-lg shadow-2xl p-1.5 z-30 space-y-1 text-xs backdrop-blur-md">
-                        <button id="rotatePdfBtn" class="w-full flex items-center justify-between px-2 py-1.5 text-slate-300 hover:bg-slate-800 hover:text-white rounded transition">
-                            <span class="flex items-center gap-1.5"><i class="fa-solid fa-file-pdf text-blue-400"></i> Xoay trang PDF</span>
-                            <span id="pageRotationText" class="font-mono text-cyan-400 font-bold text-[11px]">0°</span>
-                        </button>
-                        <button id="rotateCropBtn" class="w-full flex items-center justify-between px-2 py-1.5 text-slate-300 hover:bg-slate-800 hover:text-white rounded transition">
-                            <span class="flex items-center gap-1.5"><i class="fa-solid fa-crop-simple text-amber-400"></i> Xoay góc Crop</span>
-                            <span id="cropRotationText" class="font-mono text-amber-400 font-bold text-[11px]">0°</span>
-                        </button>
-                    </div>
-                </div>
+                <!-- Nút Xoay Bản Vẽ Trực Tiếp (0° -> 90° -> 180° -> 270°) -->
+                <button id="rotatePdfBtn" class="p-1.5 text-slate-300 hover:text-white hover:bg-slate-800/80 rounded-lg transition flex items-center gap-1 text-xs" title="Xoay trang bản vẽ (Bấm để xoay 90°)">
+                    <i class="fa-solid fa-arrows-rotate text-blue-400 text-xs"></i>
+                    <span id="dockRotationIndicator" class="font-mono text-xs text-cyan-400 font-bold min-w-[20px] text-center">0°</span>
+                </button>
 
                 <span class="w-px h-4 bg-slate-700/80 mx-1"></span>
 
-                <!-- Nút AI Auto-Scan Nổi Bật -->
-                <button id="aiAutoScanBtn" class="px-2.5 py-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-lg font-medium text-xs flex items-center gap-1.5 shadow-md shadow-purple-600/30 transition" title="Dùng AI Vision quét toàn bộ trang bản vẽ để tự động phát hiện tất cả kích thước">
+                <!-- Nút Beta Local AI Auto-Scan (Chạy Offline trên máy) -->
+                <button id="localAutoScanBtn" class="px-2.5 py-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-lg font-medium text-xs flex items-center gap-1.5 shadow-md shadow-emerald-600/30 transition" title="Tự động quét toàn bộ trang bản vẽ bằng AI Local (PP-OCRv6 Offline, không cần API Key, chạy trực tiếp trên máy)">
+                    <i class="fa-solid fa-bolt text-yellow-300 text-xs"></i>
+                    <span class="hidden sm:inline">Local Auto-Scan</span>
+                    <span class="px-1 py-0.5 text-[9px] font-extrabold bg-amber-400 text-slate-900 rounded font-mono leading-none">BETA</span>
+                </button>
+
+                <!-- Nút Chuyển Đổi Thiết Bị OCR (GPU DirectML / CPU) -->
+                <button id="ocrDeviceToggleBtn" class="px-2 py-1 bg-slate-800/90 hover:bg-slate-750 text-slate-200 border border-slate-700/80 hover:border-emerald-500/50 rounded-lg text-xs font-mono font-medium flex items-center gap-1.5 transition shadow-sm select-none" title="Chuyển đổi thiết bị xử lý: GPU DirectML / CPU">
+                    <i id="ocrDeviceIcon" class="fa-solid fa-microchip text-emerald-400 text-xs"></i>
+                    <span id="ocrDeviceLabel" class="text-[11px] font-bold text-emerald-400">GPU</span>
+                </button>
+
+                <!-- Nút AI Auto-Scan (Cloud Gemini) -->
+                <button id="aiAutoScanBtn" class="px-2.5 py-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-lg font-medium text-xs flex items-center gap-1.5 shadow-md shadow-purple-600/30 transition" title="Dùng AI Vision (Gemini Cloud) quét toàn bộ trang bản vẽ để tự động phát hiện tất cả kích thước">
                     <i class="fa-solid fa-wand-magic-sparkles text-amber-300 text-xs"></i>
-                    <span class="hidden sm:inline">AI Auto-Scan</span>
+                    <span class="hidden sm:inline">AI Vision</span>
                 </button>
             </div>
 
@@ -238,7 +231,8 @@
                             <th class="py-3 px-3 w-20 text-center text-slate-400">Ảnh Crop</th>
                             <th class="py-3 px-3.5 w-36 text-slate-100">Kích Thước (Nominal)</th>
                             <th class="py-3 px-3 w-32 text-center text-slate-100">Dung Sai</th>
-                            <th class="py-3 px-3.5 min-w-[200px] text-slate-100">Callout Đầy Đủ</th>
+                            <th class="py-3 px-3.5 min-w-[180px] text-slate-100">Callout Đầy Đủ</th>
+                            <th class="py-3 px-3 w-36 text-slate-300">Raw Text (OCR)</th>
                             <th class="py-3 px-3 w-24 text-center text-slate-400">Tác Vụ</th>
                         </tr>
                     </thead>
@@ -327,6 +321,32 @@
                 
                 <!-- TAB 1: AI VISION & QUOTA -->
                 <div id="tab-ai-vision" class="tab-pane space-y-4">
+                    <!-- PHẦN CỨNG LOCAL OCR ENGINE (GPU DirectML / CPU) -->
+                    <div class="p-3 bg-slate-950 rounded-xl border border-emerald-500/30 space-y-2.5">
+                        <div class="flex items-center justify-between">
+                            <span class="font-semibold text-slate-200 flex items-center gap-1.5 text-xs">
+                                <i class="fa-solid fa-microchip text-emerald-400"></i>
+                                <span>Phần Cứng Local OCR (PP-OCRv6 Offline)</span>
+                            </span>
+                            <span id="ocrSettingsDmlBadge" class="bg-emerald-900/60 text-emerald-300 border border-emerald-600/60 text-[10px] font-mono px-1.5 py-0.5 rounded">DirectML Ready</span>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3 pt-1">
+                            <div>
+                                <label class="text-slate-400 text-[11px] block mb-1">Thiết bị xử lý:</label>
+                                <select id="ocrDeviceSelect" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-slate-200 font-medium text-xs focus:border-emerald-500 focus:outline-none font-mono">
+                                    <option value="gpu">GPU (DirectML Acceleration)</option>
+                                    <option value="cpu">CPU (Multi-threaded x86)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="text-slate-400 text-[11px] block mb-1">Card đồ họa phát hiện:</label>
+                                <div id="ocrGpuNameDisplay" class="bg-slate-900 border border-slate-700/80 rounded-lg px-2.5 py-1.5 text-[11px] font-mono text-cyan-300 truncate" title="Đang kiểm tra...">
+                                    Đang nhận diện...
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- API Key -->
                     <div class="space-y-1.5">
                         <label class="text-slate-200 font-semibold block flex items-center justify-between">
@@ -631,6 +651,6 @@
     <!-- TOAST NOTIFICATION CONTAINER -->
     <div id="toastContainer" class="fixed bottom-8 right-4 z-50 flex flex-col space-y-2 pointer-events-none"></div>
 
-    <script src="/static/js/canvas_editor.js?v=2.7.0"></script>
+    <script src="/static/js/canvas_editor.js?v=2.9.0"></script>
 </body>
 </html>

@@ -4,18 +4,172 @@ import fitz  # PyMuPDF
 import cv2
 import numpy as np
 import base64
+from typing import Dict, Any, List, Optional, Tuple
 from io import BytesIO
 from PIL import Image
 from tolerance_parser import ToleranceParser, CADTextSanitizer
 from image_enhancer import ImageEnhancer
 from spatial_merger import DimensionSpatialMerger
 
-try:
-    from rapidocr_onnxruntime import RapidOCR
-    rapid_engine = RapidOCR()
-except Exception as e:
-    print(f"Warning: RapidOCR initialization failed: {e}")
-    rapid_engine = None
+def is_dml_available() -> bool:
+    try:
+        import onnxruntime as ort
+        return 'DmlExecutionProvider' in ort.get_available_providers()
+    except Exception:
+        return False
+
+def get_gpu_info() -> str:
+    try:
+        import subprocess
+        out = subprocess.check_output(
+            ["powershell", "-NoProfile", "-Command", "Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name"],
+            text=True, stderr=subprocess.DEVNULL
+        )
+        names = [line.strip() for line in out.strip().splitlines() if line.strip()]
+        for name in names:
+            if any(k in name.lower() for k in ["radeon", "geforce", "rtx", "gtx", "arc", "intel(r) iris", "intel(r) uhd"]):
+                return name
+        return names[0] if names else "DirectML Compatible GPU"
+    except Exception:
+        return "DirectML Compatible GPU"
+
+_ocr_engines: Dict[str, Any] = {
+    "cpu": None,
+    "gpu": None
+}
+_current_ocr_device = "gpu" if is_dml_available() else "cpu"
+_gpu_device_name = get_gpu_info() if is_dml_available() else ""
+
+def _init_ocr_engine(use_dml: bool = False):
+    try:
+        from rapidocr_onnxruntime import RapidOCR
+        import yaml
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        models_dir = os.path.join(base_dir, "models")
+        v6_cfg_path = os.path.join(models_dir, "rapidocr_v6_config.yaml")
+        v6_det = os.path.join(models_dir, "PP-OCRv6_small_det.onnx")
+        v6_rec = os.path.join(models_dir, "PP-OCRv6_small_rec.onnx")
+        v6_dict = os.path.join(models_dir, "ppocrv6_dict.txt")
+
+        # Tu dong tai model neu chua co tren may
+        if not (os.path.exists(v6_det) and os.path.exists(v6_rec) and os.path.exists(v6_dict)):
+            try:
+                from huggingface_hub import hf_hub_download
+                import shutil
+                os.makedirs(models_dir, exist_ok=True)
+                if not os.path.exists(v6_det):
+                    det_src = hf_hub_download('PaddlePaddle/PP-OCRv6_small_det_onnx', 'inference.onnx')
+                    shutil.copy(det_src, v6_det)
+                if not os.path.exists(v6_rec):
+                    rec_src = hf_hub_download('PaddlePaddle/PP-OCRv6_small_rec_onnx', 'inference.onnx')
+                    shutil.copy(rec_src, v6_rec)
+                if not os.path.exists(v6_dict):
+                    yml_path = hf_hub_download('PaddlePaddle/PP-OCRv6_small_rec_onnx', 'inference.yml')
+                    cfg_y = yaml.safe_load(open(yml_path, encoding='utf-8'))
+                    chars = cfg_y['PostProcess']['character_dict']
+                    with open(v6_dict, "w", encoding="utf-8") as f:
+                        f.write("\n".join(chars))
+            except Exception as e:
+                print(f"[OCR Engine] Khong the tu dong tai PP-OCRv6 ({e}).")
+
+        kwargs = {}
+        if use_dml:
+            kwargs = {
+                "Det": {"use_dml": True},
+                "Rec": {"use_dml": True},
+                "Cls": {"use_dml": True}
+            }
+        else:
+            kwargs = {
+                "Det": {"use_dml": False, "use_cuda": False},
+                "Rec": {"use_dml": False, "use_cuda": False},
+                "Cls": {"use_dml": False, "use_cuda": False}
+            }
+
+        dev_title = f"GPU DirectML ({_gpu_device_name})" if use_dml else "CPU"
+
+        if os.path.exists(v6_det) and os.path.exists(v6_rec) and os.path.exists(v6_dict):
+            try:
+                cfg = {}
+                if os.path.exists(v6_cfg_path):
+                    with open(v6_cfg_path, "r", encoding="utf-8") as f:
+                        cfg = yaml.safe_load(f) or {}
+                cfg.setdefault("Det", {})["model_path"] = v6_det.replace("\\", "/")
+                cfg.setdefault("Rec", {})["model_path"] = v6_rec.replace("\\", "/")
+                cfg.setdefault("Rec", {})["rec_keys_path"] = v6_dict.replace("\\", "/")
+                cfg.setdefault("Global", {})["text_score"] = 0.5
+                os.makedirs(models_dir, exist_ok=True)
+                with open(v6_cfg_path, "w", encoding="utf-8") as f:
+                    yaml.dump(cfg, f)
+                engine = RapidOCR(config_path=v6_cfg_path, **kwargs)
+                print(f"[OCR Engine] Khoi tao thanh cong RapidOCR PP-OCRv6 tren {dev_title}.")
+                return engine
+            except Exception as e:
+                print(f"[OCR Engine] Khong the nap PP-OCRv6 ({e}), chuyen ve mac dinh.")
+        
+        return RapidOCR(**kwargs)
+    except Exception as e:
+        print(f"Warning: RapidOCR initialization failed: {e}")
+        return None
+
+def get_ocr_engine(device: Optional[str] = None):
+    global _ocr_engines, _current_ocr_device
+    target = (device or _current_ocr_device).lower().strip()
+    if target == "gpu" and not is_dml_available():
+        target = "cpu"
+    
+    if _ocr_engines.get(target) is None:
+        _ocr_engines[target] = _init_ocr_engine(use_dml=(target == "gpu"))
+    
+    return _ocr_engines.get(target)
+
+def get_ocr_device_info() -> Dict[str, Any]:
+    return {
+        "current_device": _current_ocr_device,
+        "dml_available": is_dml_available(),
+        "gpu_name": _gpu_device_name or "DirectML Compatible GPU",
+        "available_devices": ["gpu", "cpu"] if is_dml_available() else ["cpu"]
+    }
+
+def set_ocr_device(device: str) -> Dict[str, Any]:
+    global _current_ocr_device
+    target = (device or "").lower().strip()
+    if target == "gpu" and not is_dml_available():
+        return {
+            "success": False,
+            "error": "GPU DirectML không khả dụng trên hệ thống này",
+            "current_device": _current_ocr_device
+        }
+    if target not in ["gpu", "cpu"]:
+        return {
+            "success": False,
+            "error": f"Thiết bị không hợp lệ: {target}. Chỉ chấp nhận 'gpu' hoặc 'cpu'",
+            "current_device": _current_ocr_device
+        }
+    
+    _current_ocr_device = target
+    # Khoi tao san engine neu chua co
+    get_ocr_engine(target)
+    dev_name_display = f"GPU DirectML ({_gpu_device_name})" if target == "gpu" else "CPU (Đa luồng)"
+    return {
+        "success": True,
+        "current_device": _current_ocr_device,
+        "gpu_name": _gpu_device_name,
+        "message": f"Đã chuyển sang thiết bị: {dev_name_display}"
+    }
+
+class _RapidEngineProxy:
+    """Proxy thong minh tu dong goi engine cua thiet bi dang chon (CPU hoac GPU)."""
+    def __call__(self, *args, **kwargs):
+        engine = get_ocr_engine()
+        if engine is None:
+            return None, None
+        return engine(*args, **kwargs)
+    
+    def __bool__(self):
+        return get_ocr_engine() is not None
+
+rapid_engine = _RapidEngineProxy()
 
 class PDFProcessor:
     def __init__(self, upload_dir=None):
@@ -24,6 +178,10 @@ class PDFProcessor:
         self.cache_dir = os.path.join(self.upload_dir, "cache")
         os.makedirs(self.cache_dir, exist_ok=True)
         self._page_ocr_cache = {}
+
+    def clear_page_ocr_cache(self):
+        """Xoa bo nho dem OCR trang khi chuyen doi thiet bi hoac can quet lai."""
+        self._page_ocr_cache.clear()
 
     def get_pdf_info(self, pdf_path):
         """
@@ -56,8 +214,8 @@ class PDFProcessor:
         cache_path = os.path.join(self.cache_dir, cache_filename)
 
         if os.path.exists(cache_path):
-            img = Image.open(cache_path)
-            return cache_path, img.width, img.height
+            with Image.open(cache_path) as img:
+                return cache_path, img.width, img.height
 
         doc = fitz.open(pdf_path)
         if page_num < 0 or page_num >= len(doc):
@@ -267,8 +425,8 @@ class PDFProcessor:
                     matched_elements.append(el)
 
             if matched_elements:
-                matched_elements.sort(key=lambda item: (item["cy"], item["cx"]))
-                raw_page_text = "\n".join([el["text"] for el in matched_elements if el["text"]])
+                merged_lines = DimensionSpatialMerger.merge_boxes(matched_elements)
+                raw_page_text = "\n".join(merged_lines) if merged_lines else "\n".join([el["text"] for el in matched_elements if el["text"]])
                 page_text = self._clean_ocr_text(raw_page_text)
                 if page_text:
                     parsed_candidate = parser.parse(page_text)
@@ -339,15 +497,18 @@ class PDFProcessor:
                     # Neu da bat duoc dung sai doi xung hoac lech thi dat chat luong toi uu
                     if parsed_res.get("upper_tol") and parsed_res.get("lower_tol"):
                         quality_score += 0.5
+                        if parsed_res.get("upper_tol") != "0" and parsed_res.get("lower_tol") != "0":
+                            quality_score += 1.0
 
                 if quality_score > best_score:
                     best_score = quality_score
                     best_raw_txt = raw_txt
                     best_parsed = parsed_res
 
-                # Neu da tim thay ket qua hoan hao (co nominal va dung sai ro net), co the dung som
+                # Neu da tim thay ket qua co day du 2 dung sai ro net (khong phai mac dinh 0), co the dung som
                 if parsed_res and parsed_res.get("nominal") is not None and parsed_res.get("tol_type") in ["local", "local_stacked", "angle"]:
-                    break
+                    if parsed_res.get("upper_tol") and parsed_res.get("lower_tol") and parsed_res.get("upper_tol") != "0" and parsed_res.get("lower_tol") != "0":
+                        break
 
             return best_raw_txt, best_parsed, best_score
 
@@ -393,7 +554,15 @@ class PDFProcessor:
                 nom_c = parsed_crop.get("nominal")
                 try:
                     if abs(float(nom_p) - float(nom_c)) < 0.05:
-                        if parsed_crop.get("tol_type") in ["local", "local_stacked", "local_limit"]:
+                        crop_has_both = parsed_crop.get("upper_tol") and parsed_crop.get("lower_tol") and parsed_crop.get("upper_tol") != "0" and parsed_crop.get("lower_tol") != "0"
+                        page_has_both = parsed_from_page.get("upper_tol") and parsed_from_page.get("lower_tol") and parsed_from_page.get("upper_tol") != "0" and parsed_from_page.get("lower_tol") != "0"
+                        if crop_has_both:
+                            final_result = parsed_crop
+                            final_result["source"] = "rapid_ocr_crop"
+                        elif page_has_both:
+                            final_result = parsed_from_page
+                            final_result["source"] = "page_ocr_aligned"
+                        elif parsed_crop.get("tol_type") in ["local", "local_stacked", "local_limit"]:
                             final_result = parsed_crop
                             final_result["source"] = "rapid_ocr_crop"
                 except:
@@ -436,3 +605,284 @@ class PDFProcessor:
         final_result["page_width"] = img_w
         final_result["page_height"] = img_h
         return final_result
+
+    def local_auto_detect(self, pdf_path: str, page_num: int = 0, page_rotation: int = 0, dpi: int = 200) -> Dict[str, Any]:
+        """
+        AI Auto-Scan chế độ Offline / Local đa hướng (Dual-Orientation 0° + 90° CCW).
+        Phát hiện toàn diện cả kích thước ngang (horizontal) và dọc (vertical) trên bản vẽ kỹ thuật,
+        áp dụng thuật toán Single-Nominal Constraint và Fragment Suppression để đạt độ chuẩn xác cao.
+        """
+        page_rotation = int(page_rotation) % 360
+        cache_path, img_w, img_h = self.render_page(pdf_path, page_num=page_num, dpi=dpi, rotation=page_rotation)
+        img = cv2.imread(cache_path)
+        if img is None or rapid_engine is None:
+            return {"success": False, "error": "Không thể khởi tạo OCR cục bộ", "dimensions": []}
+
+        # 1. Quét Pass 1: Chiều ngang (0°)
+        results_0, _ = rapid_engine(img)
+        
+        # 2. Quét Pass 2: Chiều dọc (90° CCW)
+        img_rot = cv2.rotate(img, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        results_90, _ = rapid_engine(img_rot)
+
+        TITLE_BLOCK_KEYWORDS = {
+            'SCALE', 'DATE', 'DRAWN', 'CHECKED', 'APPROVED', 'REV', 'REVISION',
+            'SHEET', 'MATERIAL', 'FINISH', 'TOLERANCE', 'UNLESS', 'TITLE', 'DWG',
+            'WEIGHT', 'THIRD', 'ANGLE', 'PROJECTION', 'SIZE', 'DO NOT SCALE',
+            'PARTS NO', 'PRODUCT NO', 'TREATMENT', 'HARDNESS'
+        }
+
+        # Trích xuất phần tử Pass 1 (0°)
+        items_0 = []
+        for box, text, score in (results_0 or []):
+            t = text.strip()
+            if not t or not re.search(r'[0-9°Øø\u3002A-Za-z]', t):
+                continue
+            xs = [pt[0] for pt in box]
+            ys = [pt[1] for pt in box]
+            x0, x1 = min(xs), max(xs)
+            y0, y1 = min(ys), max(ys)
+
+            # Lọc viền biên (grid coordinates: A, B, C, 1, 2, 3...)
+            if (x0 < img_w * 0.035 or x1 > img_w * 0.965 or y0 < img_h * 0.035 or y1 > img_h * 0.965) and len(t) <= 2:
+                continue
+            # Lọc biên đáy bản vẽ (dòng ghi chú bản quyền/pháp lý dưới cùng)
+            if y0 > img_h * 0.962:
+                continue
+            # Lọc khung tên bản vẽ (Title Block góc phải dưới)
+            if x0 > img_w * 0.52 and y0 > img_h * 0.70:
+                continue
+            up_t = t.upper()
+            if any(kw in up_t for kw in TITLE_BLOCK_KEYWORDS) and not re.search(r'[0-9]+\.[0-9]+', t):
+                continue
+            if '=' in t and re.search(r'[±+-]', t):
+                continue
+
+            items_0.append({
+                'text': t, 'score': score, 'orientation': 0,
+                'x0': x0, 'x1': x1, 'y0': y0, 'y1': y1,
+                'w': x1 - x0, 'h': y1 - y0
+            })
+
+        # Trích xuất phần tử Pass 2 (90° CCW -> chuyển tọa độ về 0°)
+        items_90 = []
+        for box, text, score in (results_90 or []):
+            t = text.strip()
+            if not t or not re.search(r'[0-9°Øø\u3002A-Za-z]', t):
+                continue
+            xs_orig = [img_w - 1 - pt[1] for pt in box]
+            ys_orig = [pt[0] for pt in box]
+            x0, x1 = min(xs_orig), max(xs_orig)
+            y0, y1 = min(ys_orig), max(ys_orig)
+
+            if (x0 < img_w * 0.035 or x1 > img_w * 0.965 or y0 < img_h * 0.035 or y1 > img_h * 0.965) and len(t) <= 2:
+                continue
+            # Lọc biên đáy bản vẽ (dòng ghi chú bản quyền/pháp lý dưới cùng)
+            if y0 > img_h * 0.962:
+                continue
+            if x0 > img_w * 0.52 and y0 > img_h * 0.70:
+                continue
+            up_t = t.upper()
+            if any(kw in up_t for kw in TITLE_BLOCK_KEYWORDS) and not re.search(r'[0-9]+\.[0-9]+', t):
+                continue
+            if '=' in t and re.search(r'[±+-]', t):
+                continue
+
+            items_90.append({
+                'text': t, 'score': score, 'orientation': 90,
+                'x0': x0, 'x1': x1, 'y0': y0, 'y1': y1,
+                'w': x1 - x0, 'h': y1 - y0
+            })
+
+        # Triệt tiêu mảnh vỡ giao hướng (Cross-orientation fragment suppression)
+        def containment_ratio(small, big):
+            x_left = max(small['x0'], big['x0'])
+            y_top = max(small['y0'], big['y0'])
+            x_right = min(small['x1'], big['x1'])
+            y_bottom = min(small['y1'], big['y1'])
+            if x_right <= x_left or y_bottom <= y_top:
+                return 0.0
+            inter = (x_right - x_left) * (y_bottom - y_top)
+            return inter / max(1.0, small['w'] * small['h'])
+
+        filtered_0 = []
+        for it0 in items_0:
+            suppress = False
+            if len(it0['text']) <= 2:
+                for it90 in items_90:
+                    if len(it90['text']) > len(it0['text']) and containment_ratio(it0, it90) > 0.50:
+                        suppress = True
+                        break
+            if not suppress:
+                filtered_0.append(it0)
+
+        filtered_90 = []
+        for it90 in items_90:
+            suppress = False
+            if len(it90['text']) <= 2:
+                for it0 in items_0:
+                    if len(it0['text']) > len(it90['text']) and containment_ratio(it90, it0) > 0.50:
+                        suppress = True
+                        break
+            if not suppress:
+                filtered_90.append(it90)
+
+        def get_nominal_value(txt):
+            clean = re.sub(r'^[+±\-~= ]+', '', txt.strip())
+            nums = re.findall(r'^[0-9]+(?:\.[0-9]+)?', clean)
+            if nums:
+                try:
+                    val = float(nums[0])
+                    if val >= 0.4 and not txt.startswith('±'):
+                        return val
+                except:
+                    pass
+            return None
+
+        # Gom nhóm với ràng buộc đơn danh nghĩa (Single-Nominal Constraint)
+        def cluster_with_single_nominal(items):
+            if not items:
+                return []
+            parent = list(range(len(items)))
+            def find(i):
+                if parent[i] == i: return i
+                parent[i] = find(parent[i])
+                return parent[i]
+
+            cluster_members = {i: [i] for i in range(len(items))}
+            pairs = []
+            for i in range(len(items)):
+                for j in range(i + 1, len(items)):
+                    e1, e2 = items[i], items[j]
+                    dx = max(0, max(e1['x0'], e2['x0']) - min(e1['x1'], e2['x1']))
+                    dy = max(0, max(e1['y0'], e2['y0']) - min(e1['y1'], e2['y1']))
+                    ref_h = max(10, min(e1['h'], e2['h']))
+                    ref_w = max(10, min(e1['w'], e2['w']))
+
+                    if e1['orientation'] == 0:
+                        is_inline = (dx < ref_h * 1.5) and (dy < ref_h * 0.35)
+                        is_stacked = (dy < ref_h * 0.90) and (dx < ref_h * 0.60)
+                    else:
+                        is_inline = (dy < ref_w * 1.5) and (dx < ref_w * 0.35)
+                        is_stacked = (dx < ref_w * 0.90) and (dy < ref_w * 0.60)
+
+                    if is_inline or is_stacked:
+                        pairs.append((dx + dy, i, j))
+
+            pairs.sort(key=lambda x: x[0])
+            for dist, i, j in pairs:
+                ri, rj = find(i), find(j)
+                if ri == rj:
+                    continue
+                members_i = cluster_members[ri]
+                members_j = cluster_members[rj]
+                nominals_i = {get_nominal_value(items[m]['text']) for m in members_i if get_nominal_value(items[m]['text']) is not None}
+                nominals_j = {get_nominal_value(items[m]['text']) for m in members_j if get_nominal_value(items[m]['text']) is not None}
+                if len(nominals_i) > 0 and len(nominals_j) > 0 and nominals_i != nominals_j:
+                    continue
+                parent[ri] = rj
+                cluster_members[rj].extend(cluster_members[ri])
+                del cluster_members[ri]
+
+            cls = {}
+            for i in range(len(items)):
+                root = find(i)
+                cls.setdefault(root, []).append(items[i])
+            return list(cls.values())
+
+        clusters_0 = cluster_with_single_nominal(filtered_0)
+        clusters_90 = cluster_with_single_nominal(filtered_90)
+        all_clusters = clusters_0 + clusters_90
+
+        def is_valid_dim_text(s: str) -> bool:
+            if re.search(r'[0-9]+\.[0-9]+', s): return True
+            if re.search(r'[°Øø±]', s): return True
+            if re.search(r'^(?:[1-9][0-9]*[xX\-_])?(?:M|G|R|C|SR|DIA)\s*[0-9]+', s, re.IGNORECASE): return True
+            if re.search(r'[+-]0\.[0-9]+', s): return True
+            if re.search(r'\b[1-9][0-9]*\b', s): return True
+            return False
+
+        parser = ToleranceParser()
+        candidate_dims = []
+        for cl in all_clusters:
+            merged_lines = DimensionSpatialMerger.merge_boxes(cl)
+            full_text = ' '.join(merged_lines).strip()
+            if not is_valid_dim_text(full_text):
+                continue
+
+            parsed = parser.parse(full_text)
+            if parsed.get('nominal') is not None or parsed.get('tol_type') in ['angle', 'angle_tol', 'thread']:
+                nom = parsed.get('nominal')
+                if isinstance(nom, (int, float)) and nom <= 0:
+                    continue
+
+                min_x = max(0, min(e['x0'] for e in cl) - 8)
+                max_x = min(img_w, max(e['x1'] for e in cl) + 8)
+                min_y = max(0, min(e['y0'] for e in cl) - 6)
+                max_y = min(img_h, max(e['y1'] for e in cl) + 6)
+                w_box = max_x - min_x
+                h_box = max_y - min_y
+
+                ori = cl[0]['orientation']
+                # Giới hạn kích thước theo hướng
+                if ori == 0:
+                    if w_box < 12 or h_box < 8 or w_box > 360 or h_box > 180:
+                        continue
+                else:
+                    if w_box < 8 or h_box < 12 or w_box > 180 or h_box > 360:
+                        continue
+
+                candidate_dims.append({
+                    'label': parsed.get('full_callout') or full_text,
+                    'full_callout': parsed.get('full_callout'),
+                    'nominal_str': parsed.get('nominal_str'),
+                    'nominal': parsed.get('nominal'),
+                    'upper_tol': parsed.get('upper_tol'),
+                    'lower_tol': parsed.get('lower_tol'),
+                    'raw_text': full_text,
+                    'orientation': ori,
+                    'crop_rotation': 270 if ori == 90 else 0,
+                    'box': {
+                        'x': int(min_x),
+                        'y': int(min_y),
+                        'w': int(w_box),
+                        'h': int(h_box)
+                    },
+                    'crop_box': {
+                        'x': round(min_x / img_w, 4),
+                        'y': round(min_y / img_h, 4),
+                        'width': round(w_box / img_w, 4),
+                        'height': round(h_box / img_h, 4)
+                    }
+                })
+
+        # NMS deduplicate giữa 2 hướng 0° và 90°
+        def box_iou(b1, b2):
+            x_left = max(b1['x'], b2['x'])
+            y_top = max(b1['y'], b2['y'])
+            x_right = min(b1['x'] + b1['w'], b2['x'] + b2['w'])
+            y_bottom = min(b1['y'] + b1['h'], b2['y'] + b2['h'])
+            if x_right <= x_left or y_bottom <= y_top:
+                return 0.0
+            inter = (x_right - x_left) * (y_bottom - y_top)
+            area1 = b1['w'] * b1['h']
+            area2 = b2['w'] * b2['h']
+            if inter / min(area1, area2) > 0.60:
+                return 0.99
+            return inter / float(area1 + area2 - inter)
+
+        final_dimensions = []
+        for it in candidate_dims:
+            overlap = False
+            for ex in final_dimensions:
+                if box_iou(it['box'], ex['box']) > 0.30:
+                    overlap = True
+                    if len(it.get('raw_text', '')) > len(ex.get('raw_text', '')):
+                        ex.update(it)
+                    break
+            if not overlap:
+                final_dimensions.append(it)
+
+        # Sắp xếp kích thước từ trên xuống dưới, từ trái sang phải
+        final_dimensions.sort(key=lambda d: (d['box']['y'], d['box']['x']))
+        return {"success": True, "count": len(final_dimensions), "dimensions": final_dimensions}

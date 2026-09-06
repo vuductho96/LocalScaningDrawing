@@ -11,7 +11,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 
-from pdf_processor import PDFProcessor
+from pdf_processor import PDFProcessor, get_ocr_device_info, set_ocr_device
 from tolerance_parser import global_adaptive_learner
 from ai_vision_service import global_ai_vision_service
 from export_service import ExportService
@@ -115,6 +115,10 @@ class CorrectionFeedbackRequest(BaseModel):
     raw_text: str
     corrected: Dict[str, Any]
 
+class ParseTextRequest(BaseModel):
+    raw_text: str
+    global_constraints: Optional[Dict[str, Any]] = None
+
 class AIVisionConfigRequest(BaseModel):
     api_key: str
     model_name: Optional[str] = "gemini-flash-latest"
@@ -133,6 +137,9 @@ class AIAutoDetectRequest(BaseModel):
     file_id: str
     page_num: int = 0
     page_rotation: int = 0
+
+class OCRDeviceRequest(BaseModel):
+    device: str
 
 class CropCoordsRequest(BaseModel):
     file_id: str
@@ -251,6 +258,20 @@ async def crop_ocr(req: CropRequest):
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Loi OCR: {str(e)}")
+
+@app.post("/api/parse-text")
+async def parse_text_endpoint(req: ParseTextRequest):
+    """
+    Phan tich truc tiep chuoi raw text bang ToleranceParser va AdaptiveLearner.
+    Dung khi nguoi dung chinh sua truc tiep o Raw Text tren bang.
+    """
+    try:
+        from tolerance_parser import ToleranceParser
+        parser = ToleranceParser(global_constraints=req.global_constraints)
+        result = parser.parse(req.raw_text)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Loi phan tich text: {str(e)}")
 
 @app.post("/api/feedback/correct")
 async def save_correction_feedback(req: CorrectionFeedbackRequest):
@@ -399,6 +420,40 @@ async def ai_auto_detect(req: AIAutoDetectRequest):
         return res
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Loi AI Auto-Detect: {str(e)}")
+
+@app.post("/api/local-auto-scan")
+async def local_auto_scan(req: AIAutoDetectRequest):
+    """
+    Auto-Scan toan bo trang ban ve che do Local (dung mo hinh PP-OCRv6 Offline, khong can API Key).
+    """
+    file_info = get_or_restore_file(req.file_id)
+    if not file_info:
+        raise HTTPException(status_code=404, detail="Khong tim thay file PDF")
+
+    pdf_path = file_info["path"]
+    try:
+        res = pdf_processor.local_auto_detect(
+            pdf_path=pdf_path,
+            page_num=req.page_num,
+            page_rotation=req.page_rotation,
+            dpi=200
+        )
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Loi Local Auto-Scan: {str(e)}")
+
+@app.get("/api/ocr/device")
+async def get_ocr_device_endpoint():
+    """Lay thong tin thiet bi chay OCR hien tai (GPU DirectML / CPU)."""
+    return get_ocr_device_info()
+
+@app.post("/api/ocr/device")
+async def set_ocr_device_endpoint(req: OCRDeviceRequest):
+    """Chuyen doi thiet bi chay OCR giua GPU va CPU."""
+    res = set_ocr_device(req.device)
+    if res.get("success"):
+        pdf_processor.clear_page_ocr_cache()
+    return res
 
 @app.post("/api/export-excel")
 async def export_excel(req: ExportRequest):
