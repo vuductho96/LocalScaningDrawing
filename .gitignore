@@ -12,3 +12,4 @@ venv/
 ocr_test_results.json
 ai_config.json
 ai_usage.json
+archive/

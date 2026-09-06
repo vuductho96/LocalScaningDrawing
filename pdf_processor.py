@@ -7,6 +7,8 @@ import base64
 from io import BytesIO
 from PIL import Image
 from tolerance_parser import ToleranceParser, CADTextSanitizer
+from image_enhancer import ImageEnhancer
+from spatial_merger import DimensionSpatialMerger
 
 try:
     from rapidocr_onnxruntime import RapidOCR
@@ -276,76 +278,78 @@ class PDFProcessor:
                         parsed_from_page["source"] = "page_ocr_aligned"
                         parsed_from_page["box"] = {"x": x, "y": y, "w": w, "h": h}
 
-        # Buoc 3: Chay RapidOCR truc tiep tren vung crop (kem tu dong xoay goc va khu trung lap)
+        # Buoc 3: Chay Multi-Pass OCR ket hop DimensionSpatialMerger tren vung crop
         def _ocr_single_cv(img_in):
-            padded = cv2.copyMakeBorder(img_in, 24, 24, 24, 24, cv2.BORDER_CONSTANT, value=[255, 255, 255])
-            ph, pw = padded.shape[:2]
-            scale = 2.0 if min(ph, pw) < 100 else 1.4
-            proc_img = cv2.resize(padded, None, fx=scale, fy=scale, interpolation=cv2.INTER_LANCZOS4)
-            
-            ocr_res, _ = rapid_engine(proc_img)
-            if not ocr_res:
+            if img_in is None or img_in.size == 0 or rapid_engine is None:
                 return "", None, 0.0
 
-            items = []
-            for box, txt, score in ocr_res:
-                txt_clean = txt.strip()
-                if txt_clean and re.search(r'[0-9°Øø\u3002A-Za-z]', txt_clean):
-                    xs = [pt[0] for pt in box]
-                    ys = [pt[1] for pt in box]
-                    items.append({
-                        'text': txt_clean,
-                        'x0': min(xs), 'x1': max(xs),
-                        'y0': min(ys), 'y1': max(ys),
-                        'cx': sum(xs) / 4.0, 'cy': sum(ys) / 4.0,
-                        'h': max(ys) - min(ys),
-                        'score': score
-                    })
-            lines = []
-            if items:
-                items.sort(key=lambda it: (it['cy'], it['x0']))
-                avg_h = sum(it['h'] for it in items) / len(items)
-                line_clusters = []
-                for it in items:
-                    matched = False
-                    for l in line_clusters:
-                        if abs(it['cy'] - l[0]['cy']) < max(12, avg_h * 0.55):
-                            l.append(it)
-                            matched = True
-                            break
-                    if not matched:
-                        line_clusters.append([it])
+            # Sinh 4 passes anh tien xu ly: Standard, CLAHE, Sharpen, Otsu
+            passes = ImageEnhancer.create_passes(img_in)
+            
+            best_raw_txt = ""
+            best_parsed = None
+            best_score = -1.0
 
-                line_clusters.sort(key=lambda l: min(it['y0'] for it in l))
-                for l in line_clusters:
-                    l.sort(key=lambda it: it['x0'])
-                    # Khu trung lap cac hop bi de len nhau do DBNet (vi du '5' va '5.0')
-                    filtered = []
-                    for it in l:
-                        if not filtered:
-                            filtered.append(it)
-                        else:
-                            prev = filtered[-1]
-                            overlap_w = min(prev['x1'], it['x1']) - max(prev['x0'], it['x0'])
-                            min_w = min(prev['x1'] - prev['x0'], it['x1'] - it['x0'])
-                            if min_w > 0 and overlap_w / min_w > 0.5:
-                                if '.' in it['text'] and '.' not in prev['text']:
-                                    filtered[-1] = it
-                                elif len(it['text']) > len(prev['text']):
-                                    filtered[-1] = it
-                            else:
-                                filtered.append(it)
-                    lines.append(' '.join(it['text'] for it in filtered))
-            else:
-                for line in ocr_res:
-                    txt = line[1].strip()
-                    if txt and re.search(r'[0-9°Øø\u3002]', txt):
-                        lines.append(txt)
+            for pass_name, proc_img in passes:
+                try:
+                    ocr_res, _ = rapid_engine(proc_img)
+                except Exception as ex:
+                    continue
 
-            raw_txt = self._clean_ocr_text("\n".join(lines))
-            parsed_res = parser.parse(raw_txt) if raw_txt else None
-            avg_sc = sum(it['score'] for it in items) / len(items) if items else 0.0
-            return raw_txt, parsed_res, avg_sc
+                if not ocr_res:
+                    continue
+
+                items = []
+                for box, txt, score in ocr_res:
+                    txt_clean = txt.strip()
+                    if txt_clean and re.search(r'[0-9°Øø\u3002A-Za-z±+\-]', txt_clean):
+                        xs = [pt[0] for pt in box]
+                        ys = [pt[1] for pt in box]
+                        items.append({
+                            'text': txt_clean,
+                            'x0': min(xs), 'x1': max(xs),
+                            'y0': min(ys), 'y1': max(ys),
+                            'cx': sum(xs) / 4.0, 'cy': sum(ys) / 4.0,
+                            'h': max(ys) - min(ys),
+                            'w': max(xs) - min(xs),
+                            'score': score
+                        })
+
+                # Dung DimensionSpatialMerger de ghep cac box theo khong gian 2D (Stacked tolerance, Prefix, Line clustering)
+                merged_lines = DimensionSpatialMerger.merge_boxes(items)
+                if not merged_lines:
+                    for line in ocr_res:
+                        txt = line[1].strip()
+                        if txt and re.search(r'[0-9°Øø\u3002A-Za-z]', txt):
+                            merged_lines.append(txt)
+
+                raw_txt = self._clean_ocr_text("\n".join(merged_lines))
+                parsed_res = parser.parse(raw_txt) if raw_txt else None
+                avg_sc = sum(it['score'] for it in items) / len(items) if items else 0.0
+
+                # Danh gia chat luong ket qua:
+                # 1. Co nominal hop le (>0) va co dung sai ro rang (local hoac local_stacked): uu tien toi da (+2.0 diem)
+                # 2. Co nominal hop le: cong 1.0 diem
+                # 3. Cong them avg_sc (confidence cua OCR tu 0.0 - 1.0)
+                quality_score = avg_sc
+                if parsed_res and parsed_res.get("nominal") is not None:
+                    quality_score += 1.0
+                    if parsed_res.get("tol_type") in ["local", "local_stacked", "local_limit", "angle"]:
+                        quality_score += 1.0
+                    # Neu da bat duoc dung sai doi xung hoac lech thi dat chat luong toi uu
+                    if parsed_res.get("upper_tol") and parsed_res.get("lower_tol"):
+                        quality_score += 0.5
+
+                if quality_score > best_score:
+                    best_score = quality_score
+                    best_raw_txt = raw_txt
+                    best_parsed = parsed_res
+
+                # Neu da tim thay ket qua hoan hao (co nominal va dung sai ro net), co the dung som
+                if parsed_res and parsed_res.get("nominal") is not None and parsed_res.get("tol_type") in ["local", "local_stacked", "angle"]:
+                    break
+
+            return best_raw_txt, best_parsed, best_score
 
         ocr_text = ""
         parsed_crop = None
@@ -404,7 +408,16 @@ class PDFProcessor:
             final_result = parsed_crop
             final_result["source"] = "rapid_ocr_crop"
 
-        # 3. Mac dinh fallback
+        # 4. Kiem tra Sub-Region Zoom cho Dung sai xep chong (Stacked Tolerance Inspection)
+        # Neu ket qua hien tai chi co nominal ma chua co dung sai cuc bo (tol_type == 'global')
+        if final_result and final_result.get("nominal") is not None and final_result.get("tol_type") == "global" and crop_cv.size > 0:
+            nom_str = str(final_result.get("nominal_str", final_result["nominal"]))
+            stacked_res = DimensionSpatialMerger.extract_stacked_subregion(crop_cv, nom_str, rapid_engine, parser)
+            if stacked_res and stacked_res.get("tol_type") in ["local", "local_stacked"]:
+                final_result.update(stacked_res)
+                final_result["source"] = "rapid_ocr_stacked_subregion"
+
+        # 5. Mac dinh fallback
         if not final_result:
             candidate_text = ocr_text if ocr_text else (vector_text if vector_text else "")
             final_result = parser.parse(candidate_text)

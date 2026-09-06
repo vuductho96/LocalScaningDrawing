@@ -347,8 +347,8 @@ class ToleranceParser:
     """
 
     PREFIX_REGEX = re.compile(
-        r'^(?:(\d+)[xX\-]\s*)?'  # Qty: 4x, 4X, 4-
-        r'([ØøФΦ]|%%[cC]|(?:DIA|dia|Dia)|[Rr]|[Mm]|(?:SR|sr)|[Cc]|[□■])?\s*' # Prefix
+        r'^(?:(\d+)\s*[xX\-_]\s*)?'  # Qty: 4x, 4X, 4-, 4_
+        r'([ØøФΦ]|%%[cC]|(?:DIA|dia|Dia)|[Rr]|[Mm]|(?:SR|sr)|[Cc]|[Gg]|(?:NPT|npt)|[□■])?\s*' # Prefix
     )
 
     SUFFIX_REGEX = re.compile(
@@ -416,6 +416,28 @@ class ToleranceParser:
             suffix = suffix_match.group(1).upper()
             clean_text = self.SUFFIX_REGEX.sub('', clean_text).strip()
 
+        # Check Thread som (M8, M10x1.25, 4-M8-6H, G1/4, NPT 1/2)
+        th_early_match = re.match(r'^(?:(\d+)\s*[xX\-_]\s*)?(M|G|NPT)\s*([0-9]+(?:\.[0-9]+)?|\d+/\d+)(?:\s*[xX]\s*([0-9]+(?:\.[0-9]+)?))?(?:[-_\s]*([0-9][A-Za-z]+))?$', clean_text.strip(), re.IGNORECASE)
+        if th_early_match:
+            th_qty = th_early_match.group(1)
+            th_type = th_early_match.group(2).upper()
+            th_size = th_early_match.group(3)
+            th_pitch = th_early_match.group(4)
+            th_class = th_early_match.group(5)
+            
+            nom_str = f"{th_size}"
+            if th_pitch:
+                nom_str += f"x{th_pitch}"
+            if th_class:
+                nom_str += f"-{th_class}"
+            
+            try:
+                nom_num = float(eval(th_size) if '/' in th_size else th_size)
+            except Exception:
+                nom_num = 0.0
+
+            return self._apply_global_constraints(raw_text, f"{th_qty}x" if th_qty else "", th_type, nom_num, nom_str, suffix)
+
         # Check DP prefix (Deep)
         dp_match = re.match(r'^(?:DP|DEEP)\s*', clean_text, re.IGNORECASE)
         if dp_match:
@@ -441,10 +463,16 @@ class ToleranceParser:
                     prefix = 'M'
                 elif p_up in ['C']:
                     prefix = 'C'
+                elif p_up in ['G']:
+                    prefix = 'G'
+                elif p_up in ['NPT']:
+                    prefix = 'NPT'
                 elif p_up in ['□', '■']:
                     prefix = '□'
                 else:
                     prefix = g_prefix
+            if g_qty or g_prefix:
+                clean_text = clean_text[prefix_match.end():].strip()
 
         # Check Chamfer: 1x45° hoac 2 x 45°
         chamfer_match = re.search(r'([0-9]+(?:\.[0-9]+)?)\s*[xX]\s*([0-9]+(?:\.[0-9]+)?)[°\u3002]', clean_text)
@@ -571,7 +599,41 @@ class ToleranceParser:
             return (prefix or '') + nom + dec + rest
         norm_text = re.sub(r'(^|[^0-9])([0-9]+\.[0-9]*)\s+([1-9][0-9]{0,2})\b(\s*[-+]|\s*$|\s+0)?', _merge_split_decimals, norm_text)
 
-        # 2. Thu cac mau Pattern
+        # 2. Thu cac mau Pattern (Drawing Parser v2)
+        # --- Pattern V2.1: Reference Dimensions (50) hoac [50] (Inspection / Gauge) ---
+        ref_match = re.match(r'^\(([0-9]+(?:\.[0-9]+)?)\)$', clean_text.strip())
+        if ref_match:
+            nom_v = float(ref_match.group(1))
+            nom_s = ref_match.group(1)
+            return self._apply_global_constraints(raw_text, qty, prefix, nom_v, f"({nom_s})", suffix or "REF")
+
+        gauge_match = re.match(r'^\[([0-9]+(?:\.[0-9]+)?)\]$', clean_text.strip())
+        if gauge_match:
+            nom_v = float(gauge_match.group(1))
+            nom_s = gauge_match.group(1)
+            return self._apply_global_constraints(raw_text, qty, prefix, nom_v, f"[{nom_s}]", suffix or "INSPECT")
+
+        # --- Pattern V2.2: Thread Dimensions (Ren co khi: M8, M10x1.25, M8-6H, M6-6g, G1/4", NPT 1/2) ---
+        thread_match = re.search(r'\b(M|G|NPT)\s*([0-9]+(?:\.[0-9]+)?|\d+/\d+)\s*(?:[xX]\s*([0-9]+(?:\.[0-9]+)?))?(?:[-_\s]*([0-9][A-Za-z]+))?', clean_text, re.IGNORECASE)
+        if thread_match and not re.search(r'[±+-]\s*[0-9]', clean_text):
+            th_type = thread_match.group(1).upper()
+            th_size = thread_match.group(2)
+            th_pitch = thread_match.group(3)
+            th_class = thread_match.group(4)
+            
+            callout_str = f"{th_type}{th_size}"
+            if th_pitch:
+                callout_str += f"x{th_pitch}"
+            if th_class:
+                callout_str += f"-{th_class}"
+            
+            try:
+                nom_num = float(eval(th_size) if '/' in th_size else th_size)
+            except Exception:
+                nom_num = 0.0
+
+            return self._apply_global_constraints(raw_text, qty, th_type, nom_num, callout_str, suffix)
+
         # --- Pattern A: Dung sai doi xung: 50 ± 0.05 hoac 50 +- 0.05 ---
         sym_match = re.search(r'([0-9]+(?:\.[0-9]+)?)\s*[±]\s*([0-9]+(?:\.[0-9]+)?)', norm_text)
         if sym_match:

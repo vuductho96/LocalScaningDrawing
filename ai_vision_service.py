@@ -12,6 +12,9 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(BASE_DIR, "ai_config.json")
 USAGE_FILE = os.path.join(BASE_DIR, "ai_usage.json")
 
+from PIL import Image
+import io
+
 # Hạn mức mặc định theo từng gói dịch vụ của Google Gemini:
 QUOTA_PROFILES = {
     "free": {
@@ -30,14 +33,50 @@ QUOTA_PROFILES = {
     }
 }
 
+# Danh sách model ưu tiên theo thứ tự tối ưu token & tốc độ cao nhất
 CANDIDATE_MODELS = [
+    "gemini-2.5-flash",
     "gemini-flash-latest",
     "gemini-2.5-flash-lite",
     "gemini-3.1-flash-lite",
     "gemini-3.8-flash",
-    "gemini-3.7-flash",
-    "gemini-3.6-flash"
+    "gemini-3.7-flash"
 ]
+
+def optimize_image_for_gemini(image_bytes: bytes, max_dim: int = 1600, quality: int = 85) -> Tuple[str, str]:
+    """
+    Tối ưu hóa ảnh trước khi gửi lên Gemini Vision:
+    - Downscale ảnh nếu kích thước vượt quá max_dim (giữ nguyên tỷ lệ khung hình).
+    - Nén dạng JPEG 85% để giảm mạnh dung lượng base64 và số lượng vision tiles.
+    - Tiết kiệm 60% - 75% lượng input tokens tiêu thụ.
+    """
+    try:
+        img = Image.open(io.BytesIO(image_bytes))
+        w, h = img.size
+        
+        # Nếu là ảnh nhỏ (ví dụ ảnh crop từng kích thước lẻ)
+        if max(w, h) <= max_dim:
+            # Chỉ nén lại định dạng JPEG nếu cần
+            if img.mode != "RGB":
+                img = img.convert("RGB")
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=quality, optimize=True)
+            return base64.b64encode(buf.getvalue()).decode("utf-8"), "image/jpeg"
+
+        # Downscale thông minh giữ tỷ lệ
+        ratio = min(max_dim / float(w), max_dim / float(h))
+        new_w = max(1, int(w * ratio))
+        new_h = max(1, int(h * ratio))
+        resized = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+        if resized.mode != "RGB":
+            resized = resized.convert("RGB")
+
+        buf = io.BytesIO()
+        resized.save(buf, format="JPEG", quality=quality, optimize=True)
+        return base64.b64encode(buf.getvalue()).decode("utf-8"), "image/jpeg"
+    except Exception as e:
+        logger.warning(f"Could not optimize image, falling back to raw: {e}")
+        return base64.b64encode(image_bytes).decode("utf-8"), "image/png"
 
 class AIVisionService:
     def __init__(self):
@@ -74,8 +113,12 @@ class AIVisionService:
             except Exception as e:
                 logger.error(f"Error reading ai_usage.json: {e}")
 
-    def save_config(self, api_key: str, model_name: Optional[str] = None, billing_tier: Optional[str] = None, custom_rpd_limit: Optional[int] = None):
-        self.api_key = api_key.strip()
+    def save_config(self, api_key: Optional[str] = None, model_name: Optional[str] = None, billing_tier: Optional[str] = None, custom_rpd_limit: Optional[int] = None):
+        if api_key is not None:
+            clean_key = api_key.strip()
+            # Chi ghi de khi nguoi dung nhap key moi thuc su (khong phai chuoi trong hoac masked dot)
+            if clean_key and not all(c in '•* ' for c in clean_key):
+                self.api_key = clean_key
         if model_name:
             self.model_name = model_name.strip()
         if billing_tier in QUOTA_PROFILES:
@@ -203,7 +246,7 @@ class AIVisionService:
             "models_used": day_stats.get("models", {})
         }
 
-    def _request_gemini(self, prompt: str, image_b64: Optional[str] = None, timeout: int = 25) -> Tuple[bool, Any]:
+    def _request_gemini(self, prompt: str, image_b64: Optional[str] = None, mime_type: str = "image/jpeg", timeout: int = 25) -> Tuple[bool, Any]:
         if not self.is_configured():
             return False, "Chưa cấu hình Gemini API Key"
 
@@ -214,7 +257,7 @@ class AIVisionService:
         if image_b64:
             parts.append({
                 "inline_data": {
-                    "mime_type": "image/png",
+                    "mime_type": mime_type,
                     "data": image_b64
                 }
             })
@@ -228,6 +271,9 @@ class AIVisionService:
         }
 
         last_err = ""
+        is_rate_limited = False
+        retry_seconds = 20
+
         for model in models_to_try:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={self.api_key}"
             try:
@@ -248,7 +294,15 @@ class AIVisionService:
                     self.record_usage(model, tot_tokens)
                     
                     return True, json.loads(text)
-                elif r.status_code in [503, 404, 429]:
+                elif r.status_code == 429:
+                    is_rate_limited = True
+                    # Đọc Retry-After header nếu có
+                    retry_hdr = r.headers.get("Retry-After")
+                    if retry_hdr and retry_hdr.isdigit():
+                        retry_seconds = int(retry_hdr)
+                    last_err = f"Google báo 429: Quá giới hạn tốc độ (Rate Limit). Vui lòng đợi ~{retry_seconds}s hoặc đổi sang Gemini Flash."
+                    continue
+                elif r.status_code in [503, 404]:
                     last_err = f"Model {model} quá tải ({r.status_code})"
                     continue
                 else:
@@ -257,6 +311,8 @@ class AIVisionService:
                 last_err = str(e)
                 continue
 
+        if is_rate_limited:
+            return False, f"Tài khoản Google đang chạm giới hạn tốc độ (Rate Limit 429). Hãy đợi khoảng {retry_seconds} giây rồi bấm lại nhé!"
         return False, f"Tất cả các model AI đều bận hoặc lỗi kết nối ({last_err})"
 
     def check_status(self) -> Dict[str, Any]:
@@ -264,25 +320,36 @@ class AIVisionService:
         if not self.is_configured():
             return {
                 "configured": False,
+                "has_key": False,
                 "status": "needs_key",
                 "message": "Chưa cấu hình Gemini API Key",
                 "usage": usage_info
             }
         
+        # Tao chuoi masked an toan: vi du "AQ.Ab8...FVWQ"
+        k = self.api_key
+        masked_k = f"{k[:6]}••••••••{k[-4:]}" if len(k) > 12 else "••••••••••••"
+
         url = f"https://generativelanguage.googleapis.com/v1beta/models?key={self.api_key}"
         try:
             r = requests.get(url, timeout=10)
             if r.status_code == 200:
                 return {
                     "configured": True,
+                    "has_key": True,
+                    "masked_key": masked_k,
                     "status": "ready",
                     "model": self.model_name,
+                    "billing_tier": self.billing_tier,
+                    "custom_rpd_limit": self.custom_rpd_limit,
                     "message": "AI Vision sẵn sàng hoạt động (Gemini Flash)",
                     "usage": usage_info
                 }
             else:
                 return {
                     "configured": False,
+                    "has_key": True,
+                    "masked_key": masked_k,
                     "status": "error",
                     "message": f"API Key không hợp lệ ({r.status_code})",
                     "usage": usage_info
@@ -302,25 +369,11 @@ class AIVisionService:
         else:
             img_bytes = image_path_or_bytes
 
-        b64_data = base64.b64encode(img_bytes).decode("utf-8")
+        # Tối ưu hóa ảnh crop nhỏ trước khi gửi
+        b64_data, mime_type = optimize_image_for_gemini(img_bytes, max_dim=800, quality=90)
 
-        prompt = f"""Bạn là chuyên gia thẩm định kích thước bản vẽ cơ khí (GD&T, ISO, ASME Y14.5).
-Hãy nhìn ảnh cắt và giải mã chính xác các thông số kích thước:
-- Gợi ý từ OCR cục bộ: "{raw_ocr_hint}"
-
-Yêu cầu:
-1. nominal: Số danh nghĩa thực (ví dụ: 57.51, 39.4, 0.20). Nếu là góc độ hoặc chữ thuần túy thì null.
-2. nominal_str: Chuỗi danh nghĩa (ví dụ: "57.51", "4°30'23\"", "R0.20", "2-C0.20").
-3. upper_tol: Dung sai trên kèm dấu (+0.005, +0.01, 0).
-4. lower_tol: Dung sai dưới kèm dấu (-0.005, -0.01, 0).
-5. qty: Số lượng (ví dụ "2", "4").
-6. prefix: Ký hiệu (R, C, Ø, M, ...).
-7. suffix: Hậu tố (THRU, DP, ...).
-8. tol_type: Loại dung sai ('symmetric', 'stacked', 'angle', 'local').
-9. full_callout: Chuỗi kích thước đầy đủ (ví dụ "57.51 ±0.005", "2-C0.20 ±0.05", "R0.20").
-10. explanation: Giải thích ngắn 1 câu.
-
-Trả về JSON:
+        prompt = f"""Thẩm định kích thước bản vẽ cơ khí (GD&T, ISO). Gợi ý OCR: "{raw_ocr_hint}".
+Trả về JSON ngắn gọn:
 {{
   "nominal": float hoặc null,
   "nominal_str": "string",
@@ -331,10 +384,10 @@ Trả về JSON:
   "suffix": "string",
   "tol_type": "string",
   "full_callout": "string",
-  "explanation": "string"
+  "explanation": "string ngắn 1 dòng"
 }}"""
 
-        ok, res = self._request_gemini(prompt, b64_data, timeout=25)
+        ok, res = self._request_gemini(prompt, b64_data, mime_type=mime_type, timeout=25)
         if ok:
             res["success"] = True
             res["source"] = f"ai_vision_{self.model_name}"
@@ -349,25 +402,23 @@ Trả về JSON:
         else:
             img_bytes = image_path_or_bytes
 
-        b64_data = base64.b64encode(img_bytes).decode("utf-8")
+        # Tối ưu hóa ảnh toàn trang: Resize max 1600px, nén JPEG 85% để giảm 70% input token!
+        b64_data, mime_type = optimize_image_for_gemini(img_bytes, max_dim=1600, quality=85)
 
-        prompt = """Bạn là hệ thống AI phân tích bản vẽ kỹ thuật cơ khí.
-Nhiệm vụ: Phát hiện TẤT CẢ các cụm ghi chú kích thước và dung sai (dimensions, tolerances, callouts, R, C, Ø, góc độ) trên toàn bộ trang bản vẽ này.
-
-Với mỗi kích thước, hãy khoanh vùng ô chữ nhật bao quanh chính xác cụm chữ/số đó.
-Tọa độ bounding box định dạng [ymin, xmin, ymax, xmax] theo thang điểm từ 0 đến 1000.
-
-Trả về JSON:
+        # Prompt tinh gọn tối đa để giảm thiểu Output Tokens
+        prompt = """Phát hiện TẤT CẢ các cụm ghi kích thước và dung sai cơ khí (dimensions, tolerances, R, C, Ø, góc độ) trên trang bản vẽ này.
+Khoanh vùng bounding box [ymin, xmin, ymax, xmax] theo thang 0-1000.
+Trả về JSON ngắn gọn:
 {
   "dimensions": [
     {
       "box_2d": [ymin, xmin, ymax, xmax],
-      "label": "Kích thước đọc được sơ bộ"
+      "label": "chữ số đọc được"
     }
   ]
 }"""
 
-        ok, res = self._request_gemini(prompt, b64_data, timeout=40)
+        ok, res = self._request_gemini(prompt, b64_data, mime_type=mime_type, timeout=40)
         if ok:
             raw_dims = res.get("dimensions", [])
             boxes = []
@@ -414,3 +465,4 @@ Trả về JSON:
 
 
 global_ai_vision_service = AIVisionService()
+

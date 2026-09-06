@@ -59,6 +59,12 @@ echo  [+] Trinh duyet se tu dong mo len sau 2 giay...
 echo  [+] De dung server: Nhan Ctrl + C
 echo ======================================================================
 
+:: Tu dong giai phong port 8000 neu server cu dang chay ngam
+for /f "tokens=5" %%p in ('netstat -aon ^| findstr ":8000" ^| findstr "LISTENING"') do (
+    echo  [*] Phat hien server cu dang chiem cong 8000 ^(PID: %%p^), dang giai phong...
+    taskkill /F /PID %%p >nul 2>&1
+)
+
 :: Hen gio mo trinh duyet sau khi uvicorn khoi dong
 start "" /b cmd /c "ping 127.0.0.1 -n 3 >nul & start http://localhost:8000"
 

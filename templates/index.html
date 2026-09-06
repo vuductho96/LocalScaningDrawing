@@ -102,6 +102,24 @@
                 <button id="panToolBtn" class="p-1.5 text-slate-300 hover:text-white hover:bg-slate-800/80 rounded-lg transition" title="Chế độ Pan di chuyển bản vẽ (Phím H hoặc Giữ Ctrl)">
                     <i class="fa-solid fa-hand text-xs"></i>
                 </button>
+
+                <!-- Tool Toggle Tọa độ X, Y (Bấm vào ký hiệu sáng lên là ON, không cần chữ Bật/Tắt) -->
+                <button id="toggleShowCoordsBtn" class="px-2 py-1 text-slate-400 hover:text-slate-200 hover:bg-slate-800/80 rounded-lg transition flex items-center justify-center text-xs font-mono font-bold" title="Tọa độ (X, Y): Đang TẮT (Bấm để BẬT)">
+                    <span id="coordsBadgeText">XY</span>
+                </button>
+
+                <!-- Cụm Điều Chỉnh Kích Thước & Kiểu Bong Bóng [-] [ ① ] [+] -->
+                <div class="flex items-center bg-slate-900/60 rounded-lg border border-slate-700/60 p-0.5">
+                    <button id="bubbleSizeDecBtn" class="w-5 h-5 text-slate-400 hover:text-white hover:bg-slate-800 rounded flex items-center justify-center transition" title="Thu nhỏ size bong bóng (-)">
+                        <i class="fa-solid fa-minus text-[9px]"></i>
+                    </button>
+                    <button id="toggleBadgeStyleBtn" class="px-1 py-0.5 hover:bg-slate-800/80 rounded transition flex items-center justify-center text-xs" title="Kiểu đánh số: Bong bóng Bubble ① (Bấm để đổi sang Dạng số #1)">
+                        <span id="badgeStyleIcon" class="w-5 h-5 rounded-full border-2 border-red-500 bg-red-500/20 text-red-400 font-bold text-[11px] flex items-center justify-center font-mono shadow-sm shadow-red-500/30">①</span>
+                    </button>
+                    <button id="bubbleSizeIncBtn" class="w-5 h-5 text-slate-400 hover:text-white hover:bg-slate-800 rounded flex items-center justify-center transition" title="Phóng to size bong bóng (+)">
+                        <i class="fa-solid fa-plus text-[9px]"></i>
+                    </button>
+                </div>
                 
                 <span class="w-px h-4 bg-slate-700/80 mx-1"></span>
 
@@ -165,7 +183,7 @@
                     </label>
                 </div>
 
-                <!-- Processing Spinner Overlay -->
+            <!-- Processing Spinner Overlay -->
                 <div id="loadingOverlay" class="hidden absolute inset-0 bg-slate-950/70 backdrop-blur-sm flex flex-col items-center justify-center z-30">
                     <div class="w-10 h-10 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin mb-3"></div>
                     <p id="loadingText" class="text-xs font-medium text-slate-200">Đang quét OCR & bóc tách dung sai...</p>
@@ -174,47 +192,57 @@
 
         </section>
 
-        <!-- RIGHT PANEL: RESULTS TABLE (TỐI ƯU GIAO DIỆN & TÌM KIẾM) -->
-        <section class="w-[580px] bg-slate-900 flex flex-col flex-shrink-0 overflow-hidden border-l border-slate-800">
+        <!-- SPLIT-BAR RESIZER (KÉO CHUỘT THAY ĐỔI ĐỘ RỘNG BẢNG DANH MỤC THEO Ý MUỐN) -->
+        <div id="panelResizer" class="w-1.5 hover:w-2 bg-slate-800 hover:bg-cyan-500 cursor-col-resize transition-all z-20 flex items-center justify-center group flex-shrink-0 select-none shadow" title="Kéo sang trái/phải để mở rộng hoặc thu nhỏ bảng danh mục">
+            <div class="h-8 w-0.5 bg-slate-600 group-hover:bg-white rounded-full transition-colors"></div>
+        </div>
+
+        <!-- RIGHT PANEL: RESULTS TABLE (BẢNG KÍCH THƯỚC RỘNG RÃI, RÕ RÀNG TRÊN MÀN HÌNH LỚN) -->
+        <section id="rightResultsPanel" class="w-[720px] 2xl:w-[820px] min-w-[500px] max-w-[85vw] bg-slate-900 flex flex-col flex-shrink-0 overflow-hidden border-l border-slate-800 shadow-2xl transition-[width] duration-75">
             
             <!-- Table Header Bar -->
-            <div class="p-2.5 bg-slate-850 border-b border-slate-800 flex items-center justify-between gap-2">
-                <div class="flex items-center space-x-2 shrink-0">
-                    <h2 class="text-xs font-bold text-slate-200 uppercase tracking-wider">Kích Thước</h2>
-                    <span id="itemCountBadge" class="bg-blue-900/50 text-blue-300 border border-blue-700/50 text-[10px] font-mono px-2 py-0.5 rounded-full">0 mục</span>
+            <div class="px-4 py-3 bg-slate-850 border-b border-slate-800 flex items-center justify-between gap-3">
+                <div class="flex items-center space-x-2.5 shrink-0">
+                    <div class="w-2 h-4 rounded-full bg-cyan-500 shadow-sm shadow-cyan-500/50"></div>
+                    <h2 class="text-sm font-bold text-slate-100 uppercase tracking-wide">Bảng Kích Thước</h2>
+                    <span id="itemCountBadge" class="bg-cyan-950/70 text-cyan-300 border border-cyan-700/60 text-xs font-mono font-semibold px-2.5 py-0.5 rounded-full shadow-inner">0 mục</span>
                 </div>
 
                 <!-- Thanh Tìm Kiếm / Lọc Nhanh -->
-                <div class="relative flex-1 max-w-[200px]">
-                    <i class="fa-solid fa-magnifying-glass text-[10px] text-slate-500 absolute left-2.5 top-2"></i>
-                    <input type="text" id="tableSearchInput" placeholder="Lọc kích thước..." class="w-full bg-slate-900 border border-slate-700/80 rounded-md pl-7 pr-2 py-1 text-[11px] text-slate-200 focus:outline-none focus:border-cyan-500 font-mono">
+                <div class="relative flex-1 max-w-[220px]">
+                    <i class="fa-solid fa-magnifying-glass text-xs text-slate-400 absolute left-3 top-2.5"></i>
+                    <input type="text" id="tableSearchInput" placeholder="Lọc kích thước..." class="w-full bg-slate-950/80 border border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/40 font-mono transition">
                 </div>
 
-                <!-- Action Buttons -->
-                <div class="flex items-center space-x-1 shrink-0">
-                    <button id="scrollToBottomBtn" class="text-slate-400 hover:text-cyan-300 text-xs p-1.5 rounded transition border border-slate-800 hover:border-slate-700" title="Cuộn xuống cuối">
-                        <i class="fa-solid fa-arrow-down text-xs"></i>
+                <!-- Action Buttons: Sort, Scroll, Clear -->
+                <div class="flex items-center space-x-1.5 shrink-0">
+                    <button id="sortOrderBtn" class="text-slate-300 hover:text-cyan-300 text-xs font-medium px-2 py-1.5 rounded-lg transition bg-slate-800 hover:bg-slate-750 border border-slate-700 flex items-center gap-1.5 shadow-sm" title="Đảo chiều sắp xếp (Mới nhất ở trên / Cũ nhất ở trên)">
+                        <i id="sortOrderIcon" class="fa-solid fa-arrow-down-9-1 text-cyan-400 text-xs"></i>
+                        <span id="sortOrderText" class="text-[11px] font-mono hidden sm:inline">Mới nhất</span>
                     </button>
-                    <button id="clearAllBtn" class="text-slate-400 hover:text-red-400 text-xs p-1.5 rounded transition border border-slate-800 hover:border-slate-700" title="Xóa toàn bộ">
+                    <button id="scrollToTopBtn" class="text-slate-400 hover:text-cyan-300 text-xs p-1.5 rounded-lg transition bg-slate-800/60 hover:bg-slate-750 border border-slate-700/80" title="Cuộn lên đầu bảng">
+                        <i class="fa-solid fa-arrow-up text-xs"></i>
+                    </button>
+                    <button id="clearAllBtn" class="text-slate-400 hover:text-red-400 text-xs p-1.5 rounded-lg transition bg-slate-800/60 hover:bg-slate-750 border border-slate-700/80" title="Xóa toàn bộ">
                         <i class="fa-solid fa-trash-can text-xs"></i>
                     </button>
                 </div>
             </div>
 
             <!-- Table Container -->
-            <div id="tableScrollContainer" class="flex-1 overflow-y-auto overflow-x-auto p-1.5 scroll-smooth">
-                <table class="w-full text-left border-collapse min-w-[500px]">
-                    <thead>
-                        <tr class="text-[11px] font-semibold text-slate-400 border-b border-slate-800 pb-1.5">
-                            <th class="py-1 px-1.5 w-7 text-center">#</th>
-                            <th class="py-1 px-1.5 w-12 text-center">Ảnh</th>
-                            <th class="py-1 px-2 w-24">Nominal</th>
-                            <th class="py-1 px-2 w-20 text-center">Dung sai</th>
-                            <th class="py-1 px-2 w-32">Callout (Đầy đủ)</th>
-                            <th class="py-1 px-1.5 w-16 text-center">Tác vụ</th>
+            <div id="tableScrollContainer" class="flex-1 overflow-y-auto overflow-x-auto p-2.5 scroll-smooth">
+                <table class="w-full text-left border-collapse min-w-[620px]">
+                    <thead class="sticky top-0 bg-slate-900/95 backdrop-blur z-10">
+                        <tr class="text-sm font-bold text-slate-200 border-b-2 border-slate-700/80 shadow-md">
+                            <th class="py-3 px-3 w-12 text-center text-slate-400">#</th>
+                            <th class="py-3 px-3 w-20 text-center text-slate-400">Ảnh Crop</th>
+                            <th class="py-3 px-3.5 w-36 text-slate-100">Kích Thước (Nominal)</th>
+                            <th class="py-3 px-3 w-32 text-center text-slate-100">Dung Sai</th>
+                            <th class="py-3 px-3.5 min-w-[200px] text-slate-100">Callout Đầy Đủ</th>
+                            <th class="py-3 px-3 w-24 text-center text-slate-400">Tác Vụ</th>
                         </tr>
                     </thead>
-                    <tbody id="resultsTableBody" class="divide-y divide-slate-800/40 text-xs">
+                    <tbody id="resultsTableBody" class="divide-y divide-slate-800/60 text-base">
                         <!-- Rows injected by JavaScript -->
                     </tbody>
                 </table>
@@ -452,6 +480,93 @@
                             </select>
                         </div>
                     </div>
+
+                    <!-- CÀI ĐẶT HIỂN THỊ GIAO DIỆN (UI DISPLAY SETTINGS) -->
+                    <div class="pt-4 border-t border-slate-800 space-y-3">
+                        <h4 class="font-bold text-slate-200 flex items-center gap-2">
+                            <i class="fa-solid fa-desktop text-cyan-400"></i>
+                            <span>Tùy Chọn Hiển Thị Bản Vẽ & Đánh Số (Drawing & Balloon Style)</span>
+                        </h4>
+
+                        <!-- Tùy chọn kiểu đánh số: Bong bóng Bubble tròn chuyên nghiệp vs Nhãn Tag chữ nhật -->
+                        <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-3">
+                            <div>
+                                <label class="text-slate-200 font-semibold text-xs block mb-1.5 flex items-center justify-between">
+                                    <span>Kiểu Đánh Số Thứ Tự (#1, #2, #3...):</span>
+                                    <span class="text-[11px] font-mono text-cyan-400" id="bubblePreviewHint">🔴 Bong bóng Bubble (Bản vẽ CAD / QC)</span>
+                                </label>
+                                <div class="grid grid-cols-2 gap-2 text-xs">
+                                    <label class="flex items-center gap-2 p-2.5 rounded-lg border border-slate-700 bg-slate-900 hover:border-red-500/70 cursor-pointer transition">
+                                        <input type="radio" name="badgeStyleRadio" value="bubble" checked class="text-red-500 focus:ring-0">
+                                        <div class="flex items-center gap-2">
+                                            <span class="w-5 h-5 rounded-full border-2 border-red-500 text-red-500 font-bold font-mono text-[11px] flex items-center justify-center bg-red-500/10 shrink-0 shadow-sm">1</span>
+                                            <div>
+                                                <div class="font-semibold text-slate-200 text-xs">Bong bóng tròn (Bubble)</div>
+                                                <div class="text-[10px] text-slate-400">Đúng chuẩn QC & Bản vẽ kỹ thuật</div>
+                                            </div>
+                                        </div>
+                                    </label>
+                                    <label class="flex items-center gap-2 p-2.5 rounded-lg border border-slate-700 bg-slate-900 hover:border-cyan-500/70 cursor-pointer transition">
+                                        <input type="radio" name="badgeStyleRadio" value="tag" class="text-cyan-500 focus:ring-0">
+                                        <div class="flex items-center gap-2">
+                                            <span class="px-1.5 py-0.5 rounded bg-blue-900/80 border border-blue-500 text-cyan-300 font-mono font-bold text-[10px] shrink-0">#1</span>
+                                            <div>
+                                                <div class="font-semibold text-slate-200 text-xs">Thẻ nhãn (Tag chữ nhật)</div>
+                                                <div class="text-[10px] text-slate-400">Khung chữ nhật xanh CAD</div>
+                                            </div>
+                                        </div>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <!-- Vị trí đặt Bubble tròn & Màu sắc -->
+                            <div id="bubbleOptionsContainer" class="grid grid-cols-2 gap-3 pt-2 border-t border-slate-800/80">
+                                <div>
+                                    <label class="text-slate-300 text-[11px] block mb-1">Vị trí đặt Bubble:</label>
+                                    <select id="bubblePositionSelect" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-slate-200 font-medium text-xs focus:border-cyan-500 focus:outline-none">
+                                        <option value="top-right">Góc trên bên phải (Khuyên dùng)</option>
+                                        <option value="top-left">Góc trên bên trái</option>
+                                        <option value="bottom-right">Góc dưới bên phải</option>
+                                        <option value="bottom-left">Góc dưới bên trái</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="text-slate-300 text-[11px] block mb-1">Màu sắc Bubble:</label>
+                                    <select id="bubbleColorSelect" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-slate-200 font-medium text-xs focus:border-cyan-500 focus:outline-none">
+                                        <option value="red">Đỏ kỹ thuật (Tiêu chuẩn QC CAD)</option>
+                                        <option value="cyan">Xanh ngọc (Cyan hiện đại)</option>
+                                        <option value="amber">Vàng cam (Amber)</option>
+                                        <option value="emerald">Xanh lá (Emerald)</option>
+                                    </select>
+                                </div>
+                                <div class="col-span-2 flex items-center justify-between pt-1">
+                                    <span class="text-slate-300 text-[11px]">Kích thước bong bóng (Size):</span>
+                                    <div class="flex items-center space-x-2 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1">
+                                        <button type="button" id="modalBubbleSizeDecBtn" class="w-5 h-5 text-slate-400 hover:text-white hover:bg-slate-800 rounded flex items-center justify-center text-xs font-bold transition">-</button>
+                                        <span id="modalBubbleSizeText" class="font-mono text-xs font-bold text-cyan-400 min-w-[36px] text-center">26px</span>
+                                        <button type="button" id="modalBubbleSizeIncBtn" class="w-5 h-5 text-slate-400 hover:text-white hover:bg-slate-800 rounded flex items-center justify-center text-xs font-bold transition">+</button>
+                                    </div>
+                                </div>
+                                <div class="col-span-2 flex items-center justify-between pt-1 border-t border-slate-800/80">
+                                    <span class="text-slate-300 text-[11px]">Phóng to/thu nhỏ đồng bộ theo bản vẽ (Scale with Zoom):</span>
+                                    <input type="checkbox" id="bubbleScaleWithDrawingCheckbox" class="w-4 h-4 rounded bg-slate-900 border-slate-700 text-cyan-600 focus:ring-0 cursor-pointer" checked>
+                                </div>
+                            </div>
+
+                            <!-- Checkbox Tọa độ X, Y -->
+                            <div class="pt-2 border-t border-slate-800/80">
+                                <label class="flex items-center justify-between cursor-pointer group">
+                                    <div class="space-y-0.5">
+                                        <span class="text-slate-200 font-medium flex items-center gap-1.5">
+                                            <span>Hiển thị thêm thông số tọa độ X, Y</span>
+                                        </span>
+                                        <p class="text-[11px] text-slate-400">Mặc định: <strong class="text-slate-300">Tắt</strong> cho đỡ rối. Chỉ hiện số thứ tự bubble tròn.</p>
+                                    </div>
+                                    <input type="checkbox" id="showCoordsCheckbox" class="w-4 h-4 rounded bg-slate-900 border-slate-700 text-cyan-600 focus:ring-0 cursor-pointer">
+                                </label>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- TAB 3: BỘ NHỚ AI HỌC THÍCH ỨNG -->
@@ -516,6 +631,6 @@
     <!-- TOAST NOTIFICATION CONTAINER -->
     <div id="toastContainer" class="fixed bottom-8 right-4 z-50 flex flex-col space-y-2 pointer-events-none"></div>
 
-    <script src="/static/js/canvas_editor.js?v=1.2.1"></script>
+    <script src="/static/js/canvas_editor.js?v=2.7.0"></script>
 </body>
 </html>

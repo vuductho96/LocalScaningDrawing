@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Extracted items
         rows: [],
+        sortOrder: 'desc', // 'desc' = kết quả mới nhất ở trên đầu, 'asc' = từ cũ đến mới
         
         // Rotation (0, 90, 180, 270)
         pageRotation: 0,
@@ -40,6 +41,16 @@ document.addEventListener('DOMContentLoaded', () => {
             decimals: { 0: 0.2, 1: 0.1, 2: 0.05, 3: 0.01, 4: 0.005, 5: 0.001 }
         },
 
+        // Tùy chọn hiển thị tọa độ X, Y trên Canvas (Mặc định: TẮT theo yêu cầu để đỡ rối mắt)
+        showCoordinates: localStorage.getItem('autoscan_show_coordinates') === 'true',
+
+        // Tùy chọn kiểu đánh số thứ tự: 'bubble' (Bong bóng tròn QC) hoặc 'tag' (Thẻ nhãn chữ nhật)
+        badgeStyle: localStorage.getItem('autoscan_badge_style') || 'bubble',
+        bubblePosition: localStorage.getItem('autoscan_bubble_pos') || 'top-right',
+        bubbleColor: localStorage.getItem('autoscan_bubble_color') || 'red',
+        bubbleRadius: parseInt(localStorage.getItem('autoscan_bubble_radius') || '14', 10), // Bán kính mặc định 14px (đường kính 28px)
+        bubbleScaleWithDrawing: localStorage.getItem('autoscan_bubble_scale_with_drawing') !== 'false', // Mặc định: Phóng to/thu nhỏ theo tỉ lệ bản vẽ khi Zoom
+
         // Blue Box Selection & Editing (Drag/Move & Resize)
         selectedRowId: null,
         hoveredHandle: null,
@@ -49,7 +60,14 @@ document.addEventListener('DOMContentLoaded', () => {
         dragStartX: 0,
         dragStartY: 0,
         boxStart: null,
-        hasBoxChanged: false
+        hasBoxChanged: false,
+
+        // Kéo rê Bong bóng Bubble tự do (Free Drag & Leader Line)
+        isDraggingBubble: false,
+        draggingBubbleRowId: null,
+        bubbleDragStartX: 0,
+        bubbleDragStartY: 0,
+        bubbleStartPos: null
     };
 
     // DOM Elements
@@ -63,7 +81,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const tableEmptyState = document.getElementById('tableEmptyState');
     const itemCountBadge = document.getElementById('itemCountBadge');
     const tableScrollContainer = document.getElementById('tableScrollContainer');
-    const scrollToBottomBtn = document.getElementById('scrollToBottomBtn');
+    const scrollToTopBtn = document.getElementById('scrollToTopBtn');
+    const sortOrderBtn = document.getElementById('sortOrderBtn');
+    const sortOrderIcon = document.getElementById('sortOrderIcon');
+    const sortOrderText = document.getElementById('sortOrderText');
     
     const docName = document.getElementById('docName');
     const pageNavContainer = document.getElementById('pageNavContainer');
@@ -77,6 +98,21 @@ document.addEventListener('DOMContentLoaded', () => {
     const fitScreenBtn = document.getElementById('fitScreenBtn');
     const resetZoomBtn = document.getElementById('resetZoomBtn');
     const panToolBtn = document.getElementById('panToolBtn');
+    const toggleShowCoordsBtn = document.getElementById('toggleShowCoordsBtn');
+    const coordsBadgeText = document.getElementById('coordsBadgeText');
+    const toggleBadgeStyleBtn = document.getElementById('toggleBadgeStyleBtn');
+    const badgeStyleIcon = document.getElementById('badgeStyleIcon');
+    const bubbleSizeDecBtn = document.getElementById('bubbleSizeDecBtn');
+    const bubbleSizeIncBtn = document.getElementById('bubbleSizeIncBtn');
+    const modalBubbleSizeDecBtn = document.getElementById('modalBubbleSizeDecBtn');
+    const modalBubbleSizeIncBtn = document.getElementById('modalBubbleSizeIncBtn');
+    const modalBubbleSizeText = document.getElementById('modalBubbleSizeText');
+    const bubbleScaleWithDrawingCheckbox = document.getElementById('bubbleScaleWithDrawingCheckbox');
+    const showCoordsCheckbox = document.getElementById('showCoordsCheckbox');
+    const bubblePositionSelect = document.getElementById('bubblePositionSelect');
+    const bubbleColorSelect = document.getElementById('bubbleColorSelect');
+    const bubbleOptionsContainer = document.getElementById('bubbleOptionsContainer');
+    const bubblePreviewHint = document.getElementById('bubblePreviewHint');
 
     const rotatePdfBtn = document.getElementById('rotatePdfBtn');
     const pageRotationText = document.getElementById('pageRotationText');
@@ -170,6 +206,56 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 3200);
     }
 
+    // Panel Resizer (Kéo chuột mở rộng bảng danh mục)
+    const panelResizer = document.getElementById('panelResizer');
+    const rightResultsPanel = document.getElementById('rightResultsPanel');
+    
+    // Khôi phục chiều rộng đã lưu nếu có
+    const savedPanelWidth = localStorage.getItem('autoscan_panel_width');
+    if (savedPanelWidth && rightResultsPanel) {
+        const parsedW = parseInt(savedPanelWidth, 10);
+        if (parsedW >= 420 && parsedW <= (window.innerWidth - 300)) {
+            rightResultsPanel.style.width = `${parsedW}px`;
+        }
+    }
+
+    if (panelResizer && rightResultsPanel) {
+        let isResizingPanel = false;
+        let startX = 0;
+        let startWidth = 0;
+
+        panelResizer.addEventListener('mousedown', (e) => {
+            isResizingPanel = true;
+            startX = e.clientX;
+            startWidth = rightResultsPanel.offsetWidth;
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+            panelResizer.classList.add('bg-cyan-500');
+            e.preventDefault();
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (!isResizingPanel) return;
+            const deltaX = startX - e.clientX; // Kéo sang trái -> Tăng bề rộng panel phải
+            const minW = 450;
+            const maxW = Math.max(500, window.innerWidth - 350);
+            const newWidth = Math.min(Math.max(startWidth + deltaX, minW), maxW);
+            rightResultsPanel.style.width = `${newWidth}px`;
+            resizeCanvas();
+        });
+
+        window.addEventListener('mouseup', () => {
+            if (isResizingPanel) {
+                isResizingPanel = false;
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+                panelResizer.classList.remove('bg-cyan-500');
+                localStorage.setItem('autoscan_panel_width', rightResultsPanel.offsetWidth);
+                resizeCanvas();
+            }
+        });
+    }
+
     // Resize Canvas to fit viewport
     function resizeCanvas() {
         if (!viewport) return;
@@ -192,41 +278,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 1. Ve anh ban ve
         ctx.drawImage(state.image, 0, 0, state.pageWidth, state.pageHeight);
-
-        // Helper: Tinh toa do 8 resize handles cua mot bounding box
-        function getBoxHandles(box) {
-            const { x, y, w, h } = box;
-            const midX = x + w / 2;
-            const midY = y + h / 2;
-            return {
-                nw: { x: x, y: y, cursor: 'nwse-resize' },
-                n:  { x: midX, y: y, cursor: 'ns-resize' },
-                ne: { x: x + w, y: y, cursor: 'nesw-resize' },
-                e:  { x: x + w, y: midY, cursor: 'ew-resize' },
-                se: { x: x + w, y: y + h, cursor: 'nwse-resize' },
-                s:  { x: midX, y: y + h, cursor: 'ns-resize' },
-                sw: { x: x, y: y + h, cursor: 'nesw-resize' },
-                w:  { x: x, y: midY, cursor: 'ew-resize' }
-            };
-        }
-
-        // Helper: Kiem tra mot diem co nam trong box hay khong
-        function isPointInBox(pt, box) {
-            return pt.x >= box.x && pt.x <= box.x + box.w &&
-                   pt.y >= box.y && pt.y <= box.y + box.h;
-        }
-
-        // Helper: Kiem tra chuot co dang cham vao mot resize handle nao khong
-        function getHitHandle(pt, box) {
-            const handles = getBoxHandles(box);
-            const hitRadius = 8 / state.scale; // ban kinh bat chuot theo ti le zoom
-            for (const [key, pos] of Object.entries(handles)) {
-                if (Math.abs(pt.x - pos.x) <= hitRadius && Math.abs(pt.y - pos.y) <= hitRadius) {
-                    return { name: key, cursor: pos.cursor };
-                }
-            }
-            return null;
-        }
 
         // 2. Ve cac o da crop truoc do (highlight overlay kem toa do X, Y)
         state.rows.forEach(r => {
@@ -261,7 +312,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
 
                     // Nhan active hien thi dang chinh sua
-                    const labelText = `✏️ #${r.id} (${Math.round(box.x)}, ${Math.round(box.y)}) [${Math.round(box.w)}x${Math.round(box.h)}]`;
+                    const labelText = state.showCoordinates 
+                        ? `✏️ #${r.id} (${Math.round(box.x)}, ${Math.round(box.y)}) [${Math.round(box.w)}x${Math.round(box.h)}]`
+                        : `✏️ #${r.id} [${Math.round(box.w)}x${Math.round(box.h)}]`;
                     ctx.font = `bold ${Math.max(10, 11 / state.scale)}px monospace`;
                     const pad = 4 / state.scale;
                     const textWidth = ctx.measureText(labelText).width;
@@ -275,14 +328,129 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 } else {
                     // Box thuong (chua chon)
-                    ctx.fillStyle = 'rgba(59, 130, 246, 0.15)';
-                    ctx.strokeStyle = '#3b82f6';
-                    ctx.lineWidth = 2 / state.scale;
-                    ctx.fillRect(box.x, box.y, box.w, box.h);
-                    ctx.strokeRect(box.x, box.y, box.w, box.h);
+                    // Neu da co Bubble va chi do: An Blue Box giup ban ve sach dep chuan Inspection
+                    if (state.badgeStyle !== 'bubble') {
+                        ctx.fillStyle = 'rgba(59, 130, 246, 0.15)';
+                        ctx.strokeStyle = '#3b82f6';
+                        ctx.lineWidth = 2 / state.scale;
+                        ctx.fillRect(box.x, box.y, box.w, box.h);
+                        ctx.strokeRect(box.x, box.y, box.w, box.h);
+                    }
+                }
 
-                    // Ve nhan so thu tu va toa do X, Y
-                    const labelText = `#${r.id} (${Math.round(box.x)}, ${Math.round(box.y)})`;
+                // =========================================================================
+                // HIỂN THỊ BONG BÓNG BUBBLE (QC BALLOON) HOẶC THẺ NHÃN (TAG)
+                // =========================================================================
+                if (state.badgeStyle === 'bubble') {
+                    // 1. Tọa độ tâm bong bóng & Bán kính (Scale theo bản vẽ hoặc Khóa size màn hình)
+                    const baseR = state.bubbleRadius || 14;
+                    const bubbleRadius = state.bubbleScaleWithDrawing ? baseR : (baseR / state.scale);
+
+                    const bc = getBubbleCenter(r, box);
+                    const bx = bc.x;
+                    const by = bc.y;
+
+                    // 2. Bảng màu Bubble (QC Red, Cyan, Amber, Emerald)
+                    let strokeCol = '#ef4444'; // Red default
+                    let fillCol = '#ffffff';
+                    let textCol = '#dc2626';
+
+                    if (state.bubbleColor === 'cyan') {
+                        strokeCol = '#06b6d4';
+                        textCol = '#0891b2';
+                    } else if (state.bubbleColor === 'amber') {
+                        strokeCol = '#f59e0b';
+                        textCol = '#d97706';
+                    } else if (state.bubbleColor === 'emerald') {
+                        strokeCol = '#10b981';
+                        textCol = '#059669';
+                    }
+
+                    // 3. Vẽ Dây Đính Kèm (Leader Line) nối từ mép Bong Bóng tới mép Text/Kích thước
+                    const targetX = Math.max(box.x, Math.min(box.x + box.w, bx));
+                    const targetY = Math.max(box.y, Math.min(box.y + box.h, by));
+                    const ldx = targetX - bx;
+                    const ldy = targetY - by;
+                    const dist = Math.hypot(ldx, ldy);
+
+                    const leaderLineWidth = state.bubbleScaleWithDrawing ? 1.6 : (1.6 / state.scale);
+                    const dotRadius = state.bubbleScaleWithDrawing ? 2.5 : (2.5 / state.scale);
+                    const lineWidth = state.bubbleScaleWithDrawing ? 2.0 : (2.0 / state.scale);
+
+                    if (dist > bubbleRadius * 0.9) {
+                        const startX = bx + (ldx / dist) * bubbleRadius;
+                        const startY = by + (ldy / dist) * bubbleRadius;
+
+                        ctx.save();
+                        ctx.beginPath();
+                        ctx.moveTo(startX, startY);
+                        ctx.lineTo(targetX, targetY);
+                        ctx.strokeStyle = isSelected ? '#06b6d4' : strokeCol;
+                        ctx.lineWidth = leaderLineWidth;
+                        ctx.stroke();
+
+                        // Điểm chốt dây (Anchor dot) tròn nhỏ đính vào vị trí kích thước
+                        ctx.beginPath();
+                        ctx.arc(targetX, targetY, dotRadius, 0, Math.PI * 2);
+                        ctx.fillStyle = isSelected ? '#06b6d4' : strokeCol;
+                        ctx.fill();
+                        ctx.restore();
+                    }
+
+                    // 4. Vẽ hình tròn Bong bóng Bubble (Scale đồng bộ theo zoom bản vẽ)
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.arc(bx, by, bubbleRadius, 0, Math.PI * 2);
+                    ctx.fillStyle = fillCol;
+                    ctx.fill();
+                    ctx.lineWidth = lineWidth;
+                    ctx.strokeStyle = isSelected ? '#06b6d4' : strokeCol;
+                    ctx.stroke();
+
+                    // Hiệu ứng viền sáng nếu box đang được chọn (Selected)
+                    if (isSelected) {
+                        const ringOffset = state.bubbleScaleWithDrawing ? 3 : (3 / state.scale);
+                        ctx.beginPath();
+                        ctx.arc(bx, by, bubbleRadius + ringOffset, 0, Math.PI * 2);
+                        ctx.strokeStyle = 'rgba(6, 182, 212, 0.7)';
+                        ctx.lineWidth = state.bubbleScaleWithDrawing ? 1.5 : (1.5 / state.scale);
+                        ctx.setLineDash([ringOffset, ringOffset]);
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+                    }
+
+                    // 5. Vẽ số thứ tự bên trong Bubble
+                    const fontSize = state.bubbleScaleWithDrawing 
+                        ? Math.max(8, Math.round(bubbleRadius * 0.82))
+                        : Math.max(7 / state.scale, Math.round(bubbleRadius * 0.82));
+                    ctx.font = `bold ${fontSize}px sans-serif`;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillStyle = isSelected ? '#0891b2' : textCol;
+                    const textYOffset = state.bubbleScaleWithDrawing ? 0.5 : (0.5 / state.scale);
+                    ctx.fillText(`${r.id}`, bx, by + textYOffset);
+                    ctx.restore();
+
+                    // 6. Nếu bật tọa độ X, Y thì vẽ thêm nhãn phụ bên cạnh
+                    if (state.showCoordinates) {
+                        const coordText = `(${Math.round(box.x)}, ${Math.round(box.y)})`;
+                        const coordFont = state.bubbleScaleWithDrawing ? 10 : Math.round(10 / state.scale);
+                        ctx.font = `bold ${coordFont}px monospace`;
+                        const pad = state.bubbleScaleWithDrawing ? 3 : (3 / state.scale);
+                        const textW = ctx.measureText(coordText).width;
+                        const labelH = state.bubbleScaleWithDrawing ? 16 : (16 / state.scale);
+                        const labelY = state.bubbleScaleWithDrawing ? (by - 8) : (by - 8 / state.scale);
+                        ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+                        ctx.fillRect(bx + bubbleRadius + pad, labelY, textW + pad * 2, labelH);
+                        ctx.fillStyle = '#67e8f9';
+                        ctx.fillText(coordText, bx + bubbleRadius + pad * 2, by + (state.bubbleScaleWithDrawing ? 4 : (4 / state.scale)));
+                    }
+
+                } else if (!isSelected) {
+                    // Kiểu Thẻ Nhãn Chữ Nhật (Tag Style) khi chưa chọn
+                    const labelText = state.showCoordinates 
+                        ? `#${r.id} (${Math.round(box.x)}, ${Math.round(box.y)})`
+                        : `#${r.id}`;
                     ctx.font = `bold ${Math.max(10, 11 / state.scale)}px monospace`;
                     const pad = 4 / state.scale;
                     const textWidth = ctx.measureText(labelText).width;
@@ -297,7 +465,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        // 3. Ve o crop dang keo moi (Active selection box kem toa do Live)
+        // 3. Ve o crop dang keo moi (Active selection box)
         if (state.isLeftDown) {
             const x = Math.min(state.startX, state.currentX);
             const y = Math.min(state.startY, state.currentY);
@@ -313,8 +481,10 @@ document.addEventListener('DOMContentLoaded', () => {
             ctx.strokeRect(x, y, w, h);
             ctx.setLineDash([]);
 
-            // Nhan toa do thuc thoi
-            const liveCoord = `X:${Math.round(x)} Y:${Math.round(y)} (${Math.round(w)}x${Math.round(h)})`;
+            // Nhan toa do thuc thoi (nếu tắt tọa độ: chỉ hiện kích thước WxH)
+            const liveCoord = state.showCoordinates 
+                ? `X:${Math.round(x)} Y:${Math.round(y)} (${Math.round(w)}x${Math.round(h)})`
+                : `[${Math.round(w)}x${Math.round(h)}]`;
             ctx.font = `bold ${Math.max(10, 11 / state.scale)}px monospace`;
             const liveWidth = ctx.measureText(liveCoord).width;
             ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
@@ -324,6 +494,41 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         ctx.restore();
+    }
+
+    // Helper: Tính tọa độ tâm của Bong bóng Bubble (tự do do người dùng kéo rê, hoặc theo vị trí mặc định)
+    function getBubbleCenter(r, box) {
+        if (r && r.bubble_pos && typeof r.bubble_pos.x === 'number' && typeof r.bubble_pos.y === 'number') {
+            return { x: r.bubble_pos.x, y: r.bubble_pos.y };
+        }
+        // Vị trí mặc định: Đặt lệch khỏi góc box một khoảng tỷ lệ theo cỡ bong bóng
+        const baseR = state.bubbleRadius || 14;
+        const offset = state.bubbleScaleWithDrawing ? (baseR * 1.6) : ((baseR * 1.6) / state.scale);
+        let bx = box.x + box.w + offset;
+        let by = box.y - offset * 0.5;
+
+        if (state.bubblePosition === 'top-left') {
+            bx = box.x - offset;
+            by = box.y - offset * 0.5;
+        } else if (state.bubblePosition === 'bottom-right') {
+            bx = box.x + box.w + offset;
+            by = box.y + box.h + offset * 0.5;
+        } else if (state.bubblePosition === 'bottom-left') {
+            bx = box.x - offset;
+            by = box.y + box.h + offset * 0.5;
+        }
+
+        return { x: bx, y: by };
+    }
+
+    // Helper: Kiểm tra một điểm pt (x, y) trên ảnh có nằm trong vòng tròn Bong bóng của row không
+    function isPointInBubble(pt, r) {
+        if (state.badgeStyle !== 'bubble' || !r || !r.raw_box) return false;
+        const bc = getBubbleCenter(r, r.raw_box);
+        const baseR = state.bubbleRadius || 14;
+        const hitRadius = state.bubbleScaleWithDrawing ? (baseR + 4) : ((baseR + 4) / state.scale);
+        const distSq = (pt.x - bc.x) * (pt.x - bc.x) + (pt.y - bc.y) * (pt.y - bc.y);
+        return distSq <= hitRadius * hitRadius;
     }
 
     // Helper functions exported to window/scope
@@ -344,8 +549,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function isPointInBox(pt, box) {
-        return pt.x >= box.x && pt.x <= box.x + box.w &&
-               pt.y >= box.y && pt.y <= box.y + box.h;
+        return (pt.x >= box.x && pt.x <= box.x + box.w &&
+                pt.y >= box.y && pt.y <= box.y + box.h);
     }
 
     // Tính tỷ lệ trùng lặp (Overlap ratio / IoU) giữa 2 bounding box
@@ -539,6 +744,43 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.button === 0) {
             const pt = screenToImage(e.clientX, e.clientY);
 
+            // 0. Kiểm tra nếu bấm vào Bong bóng Bubble (Ưu tiên kéo rê Bong bóng tự do)
+            if (state.badgeStyle === 'bubble') {
+                let clickedBubbleRow = null;
+                // Ưu tiên bubble của box đang chọn trước
+                if (state.selectedRowId !== null) {
+                    const curSel = state.rows.find(r => r.id === state.selectedRowId && r.page === state.currentPage);
+                    if (curSel && isPointInBubble(pt, curSel)) {
+                        clickedBubbleRow = curSel;
+                    }
+                }
+                // Nếu chưa trúng, duyệt toàn bộ các bubble khác trên trang
+                if (!clickedBubbleRow) {
+                    for (let i = state.rows.length - 1; i >= 0; i--) {
+                        const r = state.rows[i];
+                        if (r.page === state.currentPage && isPointInBubble(pt, r)) {
+                            clickedBubbleRow = r;
+                            break;
+                        }
+                    }
+                }
+
+                if (clickedBubbleRow) {
+                    state.selectedRowId = clickedBubbleRow.id;
+                    state.isDraggingBubble = true;
+                    state.draggingBubbleRowId = clickedBubbleRow.id;
+                    state.bubbleDragStartX = pt.x;
+                    state.bubbleDragStartY = pt.y;
+                    const curBc = getBubbleCenter(clickedBubbleRow, clickedBubbleRow.raw_box);
+                    state.bubbleStartPos = { x: curBc.x, y: curBc.y };
+                    viewport.style.cursor = 'grabbing';
+                    highlightTableRow(clickedBubbleRow.id);
+                    render();
+                    e.preventDefault();
+                    return;
+                }
+            }
+
             // 1. Kiểm tra nếu đang có box được chọn và người dùng bấm trúng Resize Handle
             if (state.selectedRowId !== null) {
                 const selRow = state.rows.find(r => r.id === state.selectedRowId && r.page === state.currentPage);
@@ -606,6 +848,22 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // Double click để đưa Bong bóng về vị trí mặc định
+    viewport.addEventListener('dblclick', (e) => {
+        if (!state.image || state.badgeStyle !== 'bubble') return;
+        const pt = screenToImage(e.clientX, e.clientY);
+        for (let i = state.rows.length - 1; i >= 0; i--) {
+            const r = state.rows[i];
+            if (r.page === state.currentPage && isPointInBubble(pt, r)) {
+                r.bubble_pos = null;
+                render();
+                showToast(`Đã khôi phục vị trí bong bóng #${r.id} về mặc định`, 'info');
+                e.preventDefault();
+                return;
+            }
+        }
+    });
+
     window.addEventListener('mousemove', (e) => {
         if (state.isPanning) {
             state.panX = e.clientX - state.panStartX;
@@ -616,25 +874,52 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const pt = screenToImage(e.clientX, e.clientY);
 
-        // A. Đang kéo di chuyển Box
-        if (state.isDraggingBox && state.selectedRowId !== null) {
-            const dx = pt.x - state.dragStartX;
-            const dy = pt.y - state.dragStartY;
-            const selRow = state.rows.find(r => r.id === state.selectedRowId);
-            if (selRow && selRow.raw_box && state.boxStart) {
-                const newX = Math.max(0, Math.min(state.pageWidth - state.boxStart.w, state.boxStart.x + dx));
-                const newY = Math.max(0, Math.min(state.pageHeight - state.boxStart.h, state.boxStart.y + dy));
-                if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
-                    state.hasBoxChanged = true;
-                }
-                selRow.raw_box.x = newX;
-                selRow.raw_box.y = newY;
+        // A. Đang kéo rê Bong bóng Bubble tự do
+        if (state.isDraggingBubble && state.draggingBubbleRowId !== null) {
+            const dx = pt.x - state.bubbleDragStartX;
+            const dy = pt.y - state.bubbleDragStartY;
+            const r = state.rows.find(row => row.id === state.draggingBubbleRowId);
+            if (r && state.bubbleStartPos) {
+                r.bubble_pos = {
+                    x: state.bubbleStartPos.x + dx,
+                    y: state.bubbleStartPos.y + dy
+                };
                 render();
             }
             return;
         }
 
-        // B. Đang kéo co giãn (Resize) Box bằng Handles
+        // B. Đang kéo di chuyển Box
+        if (state.isDraggingBox && state.selectedRowId !== null) {
+            const dx = pt.x - state.dragStartX;
+            const dy = pt.y - state.dragStartY;
+            const selRow = state.rows.find(r => r.id === state.selectedRowId);
+            if (selRow && selRow.raw_box && state.boxStart) {
+                const oldX = selRow.raw_box.x;
+                const oldY = selRow.raw_box.y;
+                const newX = Math.max(0, Math.min(state.pageWidth - state.boxStart.w, state.boxStart.x + dx));
+                const newY = Math.max(0, Math.min(state.pageHeight - state.boxStart.h, state.boxStart.y + dy));
+                const deltaX = newX - oldX;
+                const deltaY = newY - oldY;
+
+                selRow.raw_box.x = newX;
+                selRow.raw_box.y = newY;
+
+                // Dịch chuyển Bong bóng đi cùng khi Box di chuyển
+                if (selRow.bubble_pos) {
+                    selRow.bubble_pos.x += deltaX;
+                    selRow.bubble_pos.y += deltaY;
+                }
+
+                if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
+                    state.hasBoxChanged = true;
+                }
+                render();
+            }
+            return;
+        }
+
+        // C. Đang kéo co giãn (Resize) Box bằng Handles
         if (state.isResizingBox && state.selectedRowId !== null) {
             const dx = pt.x - state.dragStartX;
             const dy = pt.y - state.dragStartY;
@@ -679,7 +964,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // C. Đang kéo vẽ ô Crop mới
+        // D. Đang kéo vẽ ô Crop mới
         if (state.isLeftDown) {
             state.currentX = pt.x;
             state.currentY = pt.y;
@@ -687,12 +972,24 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // D. Di chuột tự do (Hover) -> Cập nhật Cursor phù hợp
+        // E. Di chuột tự do (Hover) -> Cập nhật Cursor phù hợp
         if (!state.isPanModeActive && !isCtrlPressed && !isSpacePressed) {
             let cursorSet = false;
 
-            // 1. Hover trên resize handles của box đang chọn
-            if (state.selectedRowId !== null) {
+            // 1. Hover trên Bong bóng Bubble -> Cursor 'grab'
+            if (state.badgeStyle === 'bubble') {
+                for (let i = state.rows.length - 1; i >= 0; i--) {
+                    const r = state.rows[i];
+                    if (r.page === state.currentPage && isPointInBubble(pt, r)) {
+                        viewport.style.cursor = 'grab';
+                        cursorSet = true;
+                        break;
+                    }
+                }
+            }
+
+            // 2. Hover trên resize handles của box đang chọn
+            if (!cursorSet && state.selectedRowId !== null) {
                 const selRow = state.rows.find(r => r.id === state.selectedRowId && r.page === state.currentPage);
                 if (selRow && selRow.raw_box) {
                     const hit = getHitHandle(pt, selRow.raw_box);
@@ -710,7 +1007,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            // 2. Hover trên thân box (đang chọn -> move, chưa chọn -> pointer)
+            // 3. Hover trên thân box (đang chọn -> move, chưa chọn -> pointer)
             if (!cursorSet) {
                 let hoveredOnBox = false;
                 for (let i = state.rows.length - 1; i >= 0; i--) {
@@ -728,7 +1025,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            // 3. Hover trên nền trống -> crosshair
+            // 4. Hover trên nền trống -> crosshair
             if (!cursorSet) {
                 viewport.style.cursor = 'crosshair';
             }
@@ -739,6 +1036,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (state.isPanning) {
             state.isPanning = false;
             viewport.style.cursor = (state.isPanModeActive || isCtrlPressed || isSpacePressed || e.ctrlKey) ? 'grab' : 'crosshair';
+            return;
+        }
+
+        // 0. Kết thúc kéo rê Bong bóng Bubble tự do
+        if (state.isDraggingBubble) {
+            state.isDraggingBubble = false;
+            state.draggingBubbleRowId = null;
+            state.bubbleStartPos = null;
+            viewport.style.cursor = 'grab';
+            render();
             return;
         }
 
@@ -896,6 +1203,184 @@ document.addEventListener('DOMContentLoaded', () => {
         updateZoomText();
         render();
     });
+
+    // Helper: Bật/Tắt hiển thị nhãn tọa độ X, Y trên Canvas
+    function setCoordinatesVisibility(visible, persist = true) {
+        state.showCoordinates = !!visible;
+        if (persist) {
+            localStorage.setItem('autoscan_show_coordinates', state.showCoordinates ? 'true' : 'false');
+        }
+        
+        // Cập nhật trạng thái hiển thị trên Dock button
+        if (toggleShowCoordsBtn) {
+            if (state.showCoordinates) {
+                // Sáng rực rỡ lên biểu thị ON
+                toggleShowCoordsBtn.className = 'px-2 py-1 text-cyan-300 bg-cyan-500/25 border border-cyan-400/70 shadow-sm shadow-cyan-500/40 rounded-lg transition flex items-center justify-center text-xs font-mono font-bold ring-1 ring-cyan-400/40';
+                toggleShowCoordsBtn.title = 'Tọa độ (X, Y): Đang BẬT (Bấm để Tắt)';
+            } else {
+                // Tối mờ biểu thị OFF
+                toggleShowCoordsBtn.className = 'px-2 py-1 text-slate-400 hover:text-slate-200 hover:bg-slate-800/80 rounded-lg transition flex items-center justify-center text-xs font-mono font-semibold border border-transparent';
+                toggleShowCoordsBtn.title = 'Tọa độ (X, Y): Đang TẮT (Bấm để Bật)';
+            }
+        }
+
+        // Cập nhật checkbox trong Cài đặt
+        if (showCoordsCheckbox) {
+            showCoordsCheckbox.checked = state.showCoordinates;
+        }
+
+        render();
+    }
+
+    // Helper: Chuyển đổi Kiểu Đánh Số Thứ Tự (Bubble vs Tag/Số)
+    function setBadgeStyle(style, persist = true) {
+        state.badgeStyle = (style === 'tag') ? 'tag' : 'bubble';
+        if (persist) {
+            localStorage.setItem('autoscan_badge_style', state.badgeStyle);
+        }
+
+        // Cập nhật nút trên Floating Dock: Đổi trực tiếp giữa icon Bubble ① và icon Dạng số #1
+        if (toggleBadgeStyleBtn) {
+            if (state.badgeStyle === 'bubble') {
+                toggleBadgeStyleBtn.className = 'p-1 hover:bg-slate-800/80 rounded-lg transition flex items-center justify-center text-xs';
+                toggleBadgeStyleBtn.innerHTML = '<span class="w-5 h-5 rounded-full border-2 border-red-500 bg-red-500/20 text-red-400 font-bold text-[11px] flex items-center justify-center font-mono shadow-sm shadow-red-500/30">①</span>';
+                toggleBadgeStyleBtn.title = 'Kiểu đánh số: Bong bóng tròn Bubble ① (Bấm để đổi sang Dạng số #1)';
+            } else {
+                toggleBadgeStyleBtn.className = 'p-1 hover:bg-slate-800/80 rounded-lg transition flex items-center justify-center text-xs';
+                toggleBadgeStyleBtn.innerHTML = '<span class="px-1.5 py-0.5 rounded bg-cyan-500/20 border border-cyan-400/60 text-cyan-300 font-mono font-bold text-[11px] flex items-center justify-center shadow-sm shadow-cyan-500/30">#1</span>';
+                toggleBadgeStyleBtn.title = 'Kiểu đánh số: Dạng số #1 (Bấm để đổi sang Bong bóng tròn Bubble ①)';
+            }
+        }
+
+        // Cập nhật Radio trong Modal Cài đặt
+        const radio = document.querySelector(`input[name="badgeStyleRadio"][value="${state.badgeStyle}"]`);
+        if (radio) radio.checked = true;
+
+        if (bubbleOptionsContainer) {
+            bubbleOptionsContainer.style.display = (state.badgeStyle === 'bubble') ? 'grid' : 'none';
+        }
+        if (bubblePreviewHint) {
+            bubblePreviewHint.textContent = (state.badgeStyle === 'bubble') 
+                ? '🔴 Bong bóng Bubble ① (Bản vẽ CAD / QC)' 
+                : '🟦 Dạng số / Thẻ nhãn #1';
+        }
+
+        render();
+    }
+
+    // Helper: Cập nhật cấu hình nâng cao của Bubble (vị trí, màu sắc)
+    function updateBubbleConfig(pos, color, persist = true) {
+        if (pos) state.bubblePosition = pos;
+        if (color) state.bubbleColor = color;
+        if (persist) {
+            localStorage.setItem('autoscan_bubble_pos', state.bubblePosition);
+            localStorage.setItem('autoscan_bubble_color', state.bubbleColor);
+        }
+        if (bubblePositionSelect) bubblePositionSelect.value = state.bubblePosition;
+        if (bubbleColorSelect) bubbleColorSelect.value = state.bubbleColor;
+        render();
+    }
+
+    // Helper: Thay đổi kích thước Bong bóng Bubble (+ hoặc -)
+    function changeBubbleSize(delta, persist = true) {
+        let curR = state.bubbleRadius || 13;
+        curR = Math.max(7, Math.min(28, curR + delta));
+        state.bubbleRadius = curR;
+        if (persist) {
+            localStorage.setItem('autoscan_bubble_radius', state.bubbleRadius);
+        }
+        if (modalBubbleSizeText) {
+            modalBubbleSizeText.textContent = `${state.bubbleRadius * 2}px`;
+        }
+        render();
+        showToast(`Cỡ bóng: ${state.bubbleRadius * 2}px`, 'info');
+    }
+
+    // Khởi tạo trạng thái ban đầu của nút Tọa độ & Badge style
+    setCoordinatesVisibility(state.showCoordinates, false);
+    setBadgeStyle(state.badgeStyle, false);
+    updateBubbleConfig(state.bubblePosition, state.bubbleColor, false);
+    if (modalBubbleSizeText) {
+        modalBubbleSizeText.textContent = `${(state.bubbleRadius || 13) * 2}px`;
+    }
+
+    // Sự kiện nút [+] và [-] tăng giảm size bong bóng (Trên Dock và Modal)
+    if (bubbleSizeDecBtn) {
+        bubbleSizeDecBtn.addEventListener('click', () => changeBubbleSize(-2));
+    }
+    if (bubbleSizeIncBtn) {
+        bubbleSizeIncBtn.addEventListener('click', () => changeBubbleSize(+2));
+    }
+    if (modalBubbleSizeDecBtn) {
+        modalBubbleSizeDecBtn.addEventListener('click', () => changeBubbleSize(-2));
+    }
+    if (modalBubbleSizeIncBtn) {
+        modalBubbleSizeIncBtn.addEventListener('click', () => changeBubbleSize(+2));
+    }
+
+    // Sự kiện khi bấm nút Toggle Tọa độ trên thanh Floating Dock
+    if (toggleShowCoordsBtn) {
+        toggleShowCoordsBtn.addEventListener('click', () => {
+            const nextState = !state.showCoordinates;
+            setCoordinatesVisibility(nextState, true);
+            if (nextState) {
+                showToast('Tọa độ (X, Y): Đang BẬT', 'info');
+            } else {
+                showToast('Tọa độ (X, Y): Đang TẮT', 'success');
+            }
+        });
+    }
+
+    // Sự kiện khi bấm nút Toggle Badge Style (Bubble vs Tag) trên Floating Dock
+    if (toggleBadgeStyleBtn) {
+        toggleBadgeStyleBtn.addEventListener('click', () => {
+            const nextStyle = (state.badgeStyle === 'bubble') ? 'tag' : 'bubble';
+            setBadgeStyle(nextStyle, true);
+            if (nextStyle === 'bubble') {
+                showToast('Kiểu đánh số: Bong bóng tròn Bubble ①', 'success');
+            } else {
+                showToast('Kiểu đánh số: Dạng số #1', 'info');
+            }
+        });
+    }
+
+    // Lắng nghe thay đổi Radio kiểu đánh số trong Modal Cài đặt
+    document.querySelectorAll('input[name="badgeStyleRadio"]').forEach(r => {
+        r.addEventListener('change', (e) => {
+            setBadgeStyle(e.target.value, true);
+        });
+    });
+
+    if (bubblePositionSelect) {
+        bubblePositionSelect.addEventListener('change', (e) => {
+            updateBubbleConfig(e.target.value, null, true);
+        });
+    }
+
+    if (bubbleColorSelect) {
+        bubbleColorSelect.addEventListener('change', (e) => {
+            updateBubbleConfig(null, e.target.value, true);
+        });
+    }
+
+    // Sự kiện khi thay đổi checkbox trong Cài đặt
+    if (showCoordsCheckbox) {
+        showCoordsCheckbox.addEventListener('change', (e) => {
+            setCoordinatesVisibility(e.target.checked, true);
+        });
+    }
+
+    if (bubbleScaleWithDrawingCheckbox) {
+        bubbleScaleWithDrawingCheckbox.checked = state.bubbleScaleWithDrawing;
+        bubbleScaleWithDrawingCheckbox.addEventListener('change', (e) => {
+            state.bubbleScaleWithDrawing = e.target.checked;
+            localStorage.setItem('autoscan_bubble_scale_with_drawing', state.bubbleScaleWithDrawing ? 'true' : 'false');
+            render();
+            showToast(state.bubbleScaleWithDrawing 
+                ? 'Đã BẬT: Bong bóng phóng to/thu nhỏ theo tỉ lệ bản vẽ' 
+                : 'Đã TẮT: Khóa kích thước bong bóng cố định trên màn hình', 'info');
+        });
+    }
 
     // Helper: Đồng bộ chỉ số xoay trên Dock và Footer
     function updateRotationUI() {
@@ -1189,24 +1674,36 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Lọc kết quả nếu người dùng nhập tìm kiếm
         const query = (tableSearchInput?.value || '').trim().toLowerCase();
-        let displayCount = 0;
+        
+        // Chuẩn bị danh sách hiển thị kèm original index trong state.rows
+        let displayList = state.rows.map((row, originalIdx) => ({ row, originalIdx }));
 
-        state.rows.forEach((row, idx) => {
-            // Kiểm tra xem dòng này có match query tìm kiếm không
-            if (query) {
+        // 1. Áp dụng tìm kiếm nếu có
+        if (query) {
+            displayList = displayList.filter(({ row }) => {
                 const searchableText = `${row.nominal_str || ''} ${row.full_callout || ''} ${row.raw_text || ''} ${row.prefix || ''} ${row.qty || ''}`.toLowerCase();
-                if (!searchableText.includes(query)) {
-                    return; // Skip dòng này nếu không khớp
-                }
-            }
-            displayCount++;
+                return searchableText.includes(query);
+            });
+        }
 
+        // 2. Sắp xếp: Mặc định 'desc' (kết quả mới nhất ở trên đầu, id lớn nhất ở trên)
+        displayList.sort((a, b) => {
+            if (state.sortOrder === 'desc') {
+                return (b.row.id || b.originalIdx) - (a.row.id || a.originalIdx);
+            } else {
+                return (a.row.id || a.originalIdx) - (b.row.id || b.originalIdx);
+            }
+        });
+
+        const displayCount = displayList.length;
+
+        displayList.forEach(({ row, originalIdx }) => {
             const tr = document.createElement('tr');
-            tr.className = 'hover:bg-slate-800/50 transition group border-b border-slate-800/40';
-            if (highlightIdx === idx) {
-                tr.classList.add('bg-blue-600/25', 'transition-colors', 'duration-700');
+            tr.className = 'hover:bg-slate-800/60 transition group border-b border-slate-800/50';
+            if (highlightIdx === originalIdx) {
+                tr.classList.add('bg-cyan-900/30', 'transition-colors', 'duration-700');
                 setTimeout(() => {
-                    tr.classList.remove('bg-blue-600/25');
+                    tr.classList.remove('bg-cyan-900/30');
                 }, 2500);
             }
 
@@ -1215,40 +1712,40 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const safeThumb = (row.thumbnail && row.thumbnail !== 'undefined') 
                 ? row.thumbnail 
-                : 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="48" height="28" fill="%23334155"><rect width="48" height="28" fill="%231e293b"/><text x="24" y="17" fill="%2364748b" font-size="9" text-anchor="middle" font-family="sans-serif">Crop</text></svg>';
+                : 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="64" height="36" fill="%23334155"><rect width="64" height="36" fill="%231e293b"/><text x="32" y="21" fill="%2364748b" font-size="10" text-anchor="middle" font-family="sans-serif">Crop</text></svg>';
 
             const box = row.box || row.raw_box || { x: 0, y: 0, w: 0, h: 0 };
 
             tr.innerHTML = `
-                <td class="py-2 px-1 text-center text-slate-500 font-mono text-[11px]">${idx + 1}</td>
-                <td class="py-2 px-1 text-center">
-                    <img src="${safeThumb}" class="w-12 h-7 object-contain bg-white rounded border border-slate-700 cursor-pointer hover:scale-125 transition origin-left shadow mx-auto" data-img="${safeThumb}" title="Nhấp để xem ảnh phóng to (X:${Math.round(box.x)}, Y:${Math.round(box.y)})">
+                <td class="py-3 px-2 text-center text-slate-400 font-mono text-sm font-bold">${row.id || (originalIdx + 1)}</td>
+                <td class="py-3 px-2 text-center">
+                    <img src="${safeThumb}" class="w-16 h-9 object-contain bg-white rounded-md border border-slate-700 cursor-pointer hover:scale-150 transition-all origin-left shadow-md mx-auto" data-img="${safeThumb}" title="Nhấp để xem ảnh phóng to (X:${Math.round(box.x)}, Y:${Math.round(box.y)})">
                 </td>
-                <td class="py-2 px-1.5">
-                    <div class="flex items-center space-x-1">
-                        ${row.prefix ? `<span class="text-amber-400 font-bold font-mono">${row.prefix}</span>` : ''}
-                        <span class="editable-cell font-mono font-semibold text-slate-100 px-1 py-0.5" contenteditable="true" data-field="nominal_str">${row.nominal_str}</span>
-                        ${row.qty ? `<span class="text-[10px] text-slate-400">(${row.qty})</span>` : ''}
+                <td class="py-3 px-3">
+                    <div class="flex items-center space-x-1.5">
+                        ${row.prefix ? `<span class="text-amber-400 font-bold font-mono text-base tracking-tight">${row.prefix}</span>` : ''}
+                        <span class="editable-cell font-mono font-bold text-slate-50 text-base px-1.5 py-0.5 rounded hover:bg-slate-700/50 transition cursor-text" contenteditable="true" data-field="nominal_str" title="Kích thước danh nghĩa">${row.nominal_str}</span>
+                        ${row.qty ? `<span class="text-xs text-slate-400 font-medium">(${row.qty})</span>` : ''}
                     </div>
                 </td>
-                <td class="py-2 px-1 text-center">
-                    <div class="inline-flex flex-col text-[11px] font-mono leading-tight">
-                        <span class="editable-cell text-blue-300 px-0.5" contenteditable="true" data-field="upper_tol">${row.upper_tol || '-'}</span>
-                        <span class="editable-cell text-red-300 px-0.5" contenteditable="true" data-field="lower_tol">${row.lower_tol || '-'}</span>
+                <td class="py-3 px-2 text-center">
+                    <div class="inline-flex flex-col text-xs font-mono font-semibold leading-tight bg-slate-950/50 px-2 py-1 rounded-md border border-slate-800">
+                        <span class="editable-cell text-blue-400 hover:bg-blue-900/30 px-1 rounded transition text-xs font-bold" contenteditable="true" data-field="upper_tol" title="Dung sai trên (+)">${row.upper_tol || '-'}</span>
+                        <span class="editable-cell text-rose-400 hover:bg-rose-900/30 px-1 rounded transition text-xs font-bold" contenteditable="true" data-field="lower_tol" title="Dung sai dưới (-)">${row.lower_tol || '-'}</span>
                     </div>
                 </td>
-                <td class="py-2 px-1.5">
-                    <div class="flex items-center gap-1">
-                        <span class="editable-cell font-mono font-bold text-cyan-300 text-[11px] px-1 py-0.5 block truncate max-w-[140px]" contenteditable="true" data-field="full_callout" title="${(row.full_callout || '').replace(/"/g, '&quot;')}">${row.full_callout || '-'}</span>
-                        <span class="ai-learned-badge text-[9px] font-mono px-1 py-0.2 rounded bg-amber-900/50 text-amber-300 border border-amber-600/60 shrink-0 ${(isLearned || isUserCorrected) ? '' : 'hidden'}" title="Đã học theo quy tắc AI">AI</span>
-                        ${row.is_ai_vision ? `<span class="text-[9px] font-mono px-1 py-0.2 rounded bg-purple-900/60 text-purple-300 border border-purple-600/70 shrink-0" title="Đã bóc tách bằng AI Vision">Vision</span>` : ''}
+                <td class="py-3 px-3">
+                    <div class="flex items-center gap-2">
+                        <span class="editable-cell font-mono font-bold text-cyan-300 text-base px-1.5 py-0.5 rounded hover:bg-slate-700/50 transition cursor-text block truncate max-w-[220px]" contenteditable="true" data-field="full_callout" title="${(row.full_callout || '').replace(/"/g, '&quot;')}">${row.full_callout || '-'}</span>
+                        <span class="ai-learned-badge text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-900/60 text-amber-300 border border-amber-600/70 shrink-0 ${(isLearned || isUserCorrected) ? '' : 'hidden'}" title="Đã học theo quy tắc AI">AI</span>
+                        ${row.is_ai_vision ? `<span class="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-purple-900/70 text-purple-300 border border-purple-500/80 shrink-0 shadow-sm" title="Đã bóc tách bằng AI Vision">Vision</span>` : ''}
                     </div>
                 </td>
-                <td class="py-2 px-1 text-center whitespace-nowrap">
-                    <div class="row-actions flex items-center justify-center space-x-1">
-                        <button class="ai-inspect-btn text-slate-400 hover:text-purple-400 p-1 transition" title="Dùng AI Vision thẩm định & bóc tách lại kích thước này"><i class="fa-solid fa-wand-magic-sparkles text-[10px]"></i></button>
-                        <button class="rotate-row-btn text-slate-400 hover:text-cyan-400 p-1 transition" title="Xoay ảnh 90° và quét lại OCR (Dành cho kích thước dọc)"><i class="fa-solid fa-arrow-rotate-right text-[10px]"></i></button>
-                        <button class="text-slate-500 hover:text-red-400 delete-btn p-1 transition" title="Xóa dòng"><i class="fa-solid fa-xmark text-[11px]"></i></button>
+                <td class="py-3 px-2 text-center whitespace-nowrap">
+                    <div class="row-actions flex items-center justify-center space-x-1.5">
+                        <button class="ai-inspect-btn text-slate-400 hover:text-purple-300 p-1.5 rounded hover:bg-slate-750 transition" title="Dùng AI Vision thẩm định & bóc tách lại kích thước này"><i class="fa-solid fa-wand-magic-sparkles text-sm"></i></button>
+                        <button class="rotate-row-btn text-slate-400 hover:text-cyan-300 p-1.5 rounded hover:bg-slate-750 transition" title="Xoay ảnh 90° và quét lại OCR (Dành cho kích thước dọc)"><i class="fa-solid fa-arrow-rotate-right text-sm"></i></button>
+                        <button class="text-slate-400 hover:text-rose-400 delete-btn p-1.5 rounded hover:bg-slate-750 transition" title="Xóa dòng"><i class="fa-solid fa-xmark text-base"></i></button>
                     </div>
                 </td>
             `;
@@ -1272,7 +1769,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     } : null);
                     if (!b) return;
 
-                    aiInspectBtn.innerHTML = '<i class="fa-solid fa-spinner animate-spin text-purple-400"></i>';
+                    aiInspectBtn.innerHTML = '<i class="fa-solid fa-spinner animate-spin text-purple-400 text-xs"></i>';
                     try {
                         const curRot = row.crop_rotation || 0;
                         const resp = await fetch('/api/ai-vision/inspect-crop', {
@@ -1289,20 +1786,20 @@ document.addEventListener('DOMContentLoaded', () => {
                         });
                         const data = await resp.json();
                         if (data.nominal_str || data.full_callout) {
-                            state.rows[idx] = {
-                                ...state.rows[idx],
+                            state.rows[originalIdx] = {
+                                ...state.rows[originalIdx],
                                 ...data,
                                 is_ai_vision: true
                             };
-                            renderTable(false, idx);
-                            showToast(`✨ AI Vision: Đã giải mã xong #${idx + 1}: ${data.full_callout}`, 'success');
+                            renderTable(false, originalIdx);
+                            showToast(`✨ AI Vision: Đã giải mã xong #${row.id}: ${data.full_callout}`, 'success');
                         } else if (data.ai_error) {
                             showToast(`AI Vision: ${data.ai_error}`, 'warning');
                         }
                     } catch (err) {
                         showToast(`Lỗi AI Vision: ${err.message}`, 'error');
                     } finally {
-                        aiInspectBtn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles text-[10px]"></i>';
+                        aiInspectBtn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles text-xs"></i>';
                         checkAiVisionStatus();
                     }
                 });
@@ -1393,7 +1890,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Delete row
             tr.querySelector('.delete-btn').addEventListener('click', (e) => {
                 e.stopPropagation();
-                state.rows.splice(idx, 1);
+                state.rows.splice(originalIdx, 1);
                 if (state.selectedRowId === row.id) {
                     state.selectedRowId = null;
                 }
@@ -1404,7 +1901,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Nhấp vào dòng để Chọn Box xanh tương ứng trên Canvas
             tr.dataset.rowId = row.id;
             if (state.selectedRowId === row.id) {
-                tr.classList.add('bg-cyan-950/40', 'border-l-4', 'border-l-cyan-400');
+                tr.classList.add('bg-cyan-950/50', 'border-l-4', 'border-l-cyan-400');
             }
             tr.addEventListener('click', (e) => {
                 // Nếu bấm vào input edit hoặc button con thì không trigger chọn
@@ -1428,13 +1925,22 @@ document.addEventListener('DOMContentLoaded', () => {
             itemCountBadge.textContent = `${displayCount}/${state.rows.length} mục`;
         }
 
-        // Tu dong cuon xuong duoi de xem ket qua moi nhat
+        // Tự động cuộn đến vị trí kết quả mới nhất
         if (autoScroll && tableScrollContainer) {
             setTimeout(() => {
-                tableScrollContainer.scrollTo({
-                    top: tableScrollContainer.scrollHeight,
-                    behavior: 'smooth'
-                });
+                if (state.sortOrder === 'desc') {
+                    // Khi mới nhất ở trên đầu: Cuộn mượt lên đỉnh bảng
+                    tableScrollContainer.scrollTo({
+                        top: 0,
+                        behavior: 'smooth'
+                    });
+                } else {
+                    // Khi mới nhất ở cuối: Cuộn mượt xuống đáy bảng
+                    tableScrollContainer.scrollTo({
+                        top: tableScrollContainer.scrollHeight,
+                        behavior: 'smooth'
+                    });
+                }
             }, 60);
         }
     }
@@ -1501,12 +2007,32 @@ document.addEventListener('DOMContentLoaded', () => {
         previewModal.classList.add('hidden');
     });
 
-    if (scrollToBottomBtn && tableScrollContainer) {
-        scrollToBottomBtn.addEventListener('click', () => {
+    // Scroll to Top Button
+    if (scrollToTopBtn && tableScrollContainer) {
+        scrollToTopBtn.addEventListener('click', () => {
             tableScrollContainer.scrollTo({
-                top: tableScrollContainer.scrollHeight,
+                top: 0,
                 behavior: 'smooth'
             });
+        });
+    }
+
+    // Toggle Sort Order: Newest at Top vs Oldest at Top
+    if (sortOrderBtn) {
+        sortOrderBtn.addEventListener('click', () => {
+            state.sortOrder = (state.sortOrder === 'desc') ? 'asc' : 'desc';
+            if (state.sortOrder === 'desc') {
+                if (sortOrderIcon) sortOrderIcon.className = 'fa-solid fa-arrow-down-9-1 text-cyan-400 text-xs';
+                if (sortOrderText) sortOrderText.textContent = 'Mới nhất';
+                sortOrderBtn.title = 'Đang sắp xếp: Mới nhất ở trên đầu. Nhấp để chuyển sang cũ nhất ở trên';
+                showToast('Đã chuyển sang: Kích thước mới nhất ở trên đầu', 'info');
+            } else {
+                if (sortOrderIcon) sortOrderIcon.className = 'fa-solid fa-arrow-up-1-9 text-amber-400 text-xs';
+                if (sortOrderText) sortOrderText.textContent = 'Cũ nhất';
+                sortOrderBtn.title = 'Đang sắp xếp: Cũ nhất ở trên đầu. Nhấp để chuyển sang mới nhất ở trên';
+                showToast('Đã chuyển sang: Kích thước từ đầu bản vẽ (1 ➔ N)', 'info');
+            }
+            renderTable(true);
         });
     }
 
@@ -1542,6 +2068,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 pane.classList.add('hidden');
             }
         });
+
+        // Đồng bộ trạng thái checkbox hiển thị tọa độ & tùy chọn Bubble
+        if (showCoordsCheckbox) {
+            showCoordsCheckbox.checked = state.showCoordinates;
+        }
+        const radio = document.querySelector(`input[name="badgeStyleRadio"][value="${state.badgeStyle}"]`);
+        if (radio) radio.checked = true;
+        if (bubblePositionSelect) bubblePositionSelect.value = state.bubblePosition;
+        if (bubbleColorSelect) bubbleColorSelect.value = state.bubbleColor;
+        if (bubbleOptionsContainer) {
+            bubbleOptionsContainer.style.display = (state.badgeStyle === 'bubble') ? 'grid' : 'none';
+        }
 
         // Nạp dữ liệu cần thiết cho tab
         if (targetTab === 'tab-ai-vision') {
@@ -1617,6 +2155,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 const isoTxt = iso.replace('iso2768_', 'ISO-');
                 if (globalSummaryBadge) globalSummaryBadge.textContent = isoTxt;
                 if (footerTolRuleSummary) footerTolRuleSummary.textContent = `Dung sai: ${isoTxt}`;
+            }
+
+            // Lưu cài đặt hiển thị tọa độ X, Y
+            if (showCoordsCheckbox) {
+                setCoordinatesVisibility(showCoordsCheckbox.checked, true);
+            }
+
+            // Lưu cài đặt kiểu hiển thị Bubble / Tag
+            const chosenStyle = document.querySelector('input[name="badgeStyleRadio"]:checked')?.value || 'bubble';
+            setBadgeStyle(chosenStyle, true);
+            if (bubblePositionSelect && bubbleColorSelect) {
+                updateBubbleConfig(bubblePositionSelect.value, bubbleColorSelect.value, true);
             }
 
             // 2. Lưu AI Vision Config
@@ -1898,12 +2448,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (aiStatusDot) aiStatusDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400 shrink-0';
                 if (aiStatusDetail) aiStatusDetail.textContent = `Sẵn sàng hoạt động (${modelDisplay})`;
                 if (data.model && aiModelSelect) aiModelSelect.value = data.model;
+                if (data.billing_tier && aiBillingTierSelect) aiBillingTierSelect.value = data.billing_tier;
+                if (data.masked_key && aiApiKeyInput) {
+                    if (!aiApiKeyInput.value || aiApiKeyInput.value.includes('•••')) {
+                        aiApiKeyInput.value = data.masked_key;
+                        aiApiKeyInput.dataset.hasSavedKey = 'true';
+                    }
+                }
                 if (footerAiDot) footerAiDot.className = 'w-2 h-2 rounded-full bg-emerald-400';
                 if (footerAiModelText) footerAiModelText.textContent = modelDisplay;
                 if (headerSettingsDot) headerSettingsDot.className = 'w-2 h-2 rounded-full bg-emerald-400 ml-0.5';
             } else {
                 if (aiStatusDot) aiStatusDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400 shrink-0';
                 if (aiStatusDetail) aiStatusDetail.textContent = data.message || 'Chưa cấu hình API Key';
+                if (aiApiKeyInput) {
+                    delete aiApiKeyInput.dataset.hasSavedKey;
+                    if (aiApiKeyInput.value.includes('•••')) aiApiKeyInput.value = '';
+                }
                 if (footerAiDot) footerAiDot.className = 'w-2 h-2 rounded-full bg-amber-400';
                 if (footerAiModelText) footerAiModelText.textContent = 'Chưa cài API Key';
                 if (headerSettingsDot) headerSettingsDot.className = 'w-2 h-2 rounded-full bg-amber-400 ml-0.5';
@@ -2023,7 +2584,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 showToast(`🤖 AI Vision đã phát hiện ${dims.length} kích thước! Đang bóc tách chi tiết...`, 'info');
 
                 let addedCount = 0;
-                for (const d of dims) {
+                let completedCount = 0;
+
+                // Hàm bóc tách 1 dimension
+                const processSingleDim = async (d) => {
                     try {
                         const cropResp = await fetch('/api/crop-ocr', {
                             method: 'POST',
@@ -2066,7 +2630,6 @@ document.addEventListener('DOMContentLoaded', () => {
                             };
 
                             if (existingRow) {
-                                // Cập nhật đè lên row đã có thay vì tạo thêm 1 box chồng lên nhau
                                 Object.assign(existingRow, rowPayload);
                             } else {
                                 const newRow = {
@@ -2080,11 +2643,22 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     } catch (e) {
                         console.error('Lỗi bóc tách ô crop:', e);
+                    } finally {
+                        completedCount++;
+                        loadingText.textContent = `🤖 Đang bóc tách chi tiết: ${completedCount}/${dims.length} kích thước...`;
                     }
+                };
+
+                // Chạy đồng thời theo lô 6 request song song để tăng tốc độ gấp 5-6 lần
+                const CONCURRENCY_LIMIT = 6;
+                for (let i = 0; i < dims.length; i += CONCURRENCY_LIMIT) {
+                    const batch = dims.slice(i, i + CONCURRENCY_LIMIT);
+                    await Promise.all(batch.map(d => processSingleDim(d)));
+                    // Cập nhật canvas và bảng định kỳ theo từng batch để người dùng nhìn thấy bong bóng xuất hiện dần
+                    renderTable(true, state.rows.length - 1);
+                    render();
                 }
 
-                renderTable(true, state.rows.length - 1);
-                render();
                 showToast(`🎉 AI Auto-Scan hoàn tất: Đã bóc tách thành công ${addedCount} kích thước!`, 'success');
 
             } catch (err) {

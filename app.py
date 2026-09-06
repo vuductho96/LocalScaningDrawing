@@ -1,8 +1,8 @@
+import socket
+import _overlapped
 import os
 import uuid
 import json
-import csv
-import io
 import base64
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse, JSONResponse
@@ -10,13 +10,11 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
-import openpyxl
-from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-from openpyxl.utils import get_column_letter
 
 from pdf_processor import PDFProcessor
 from tolerance_parser import global_adaptive_learner
 from ai_vision_service import global_ai_vision_service
+from export_service import ExportService
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
@@ -96,6 +94,10 @@ def get_or_restore_file(file_id: str) -> Optional[Dict[str, Any]]:
 
     return None
 
+# ==============================================================================
+# REQUEST & DATA SCHEMAS
+# ==============================================================================
+
 class CropRequest(BaseModel):
     file_id: str
     page_num: int = 0
@@ -108,6 +110,39 @@ class ExportRequest(BaseModel):
     drawing_name: Optional[str] = "BanVeKyThuat"
     global_constraints_summary: Optional[str] = ""
     rows: List[Dict[str, Any]]
+
+class CorrectionFeedbackRequest(BaseModel):
+    raw_text: str
+    corrected: Dict[str, Any]
+
+class AIVisionConfigRequest(BaseModel):
+    api_key: str
+    model_name: Optional[str] = "gemini-flash-latest"
+    billing_tier: Optional[str] = "free"
+    custom_rpd_limit: Optional[int] = 0
+
+class AIInspectCropRequest(BaseModel):
+    file_id: str
+    page_num: int = 0
+    crop_box: Dict[str, float]
+    raw_ocr_hint: Optional[str] = ""
+    page_rotation: int = 0
+    crop_rotation: int = 0
+
+class AIAutoDetectRequest(BaseModel):
+    file_id: str
+    page_num: int = 0
+    page_rotation: int = 0
+
+class CropCoordsRequest(BaseModel):
+    file_id: str
+    page_num: int = 0
+    x: float
+    y: float
+    w: float
+    h: float
+    crop_rotation: int = 0
+    global_constraints: Optional[Dict[str, Any]] = None
 
 @app.get("/", response_class=FileResponse)
 async def index(request: Request):
@@ -217,10 +252,6 @@ async def crop_ocr(req: CropRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Loi OCR: {str(e)}")
 
-class CorrectionFeedbackRequest(BaseModel):
-    raw_text: str
-    corrected: Dict[str, Any]
-
 @app.post("/api/feedback/correct")
 async def save_correction_feedback(req: CorrectionFeedbackRequest):
     """
@@ -256,25 +287,6 @@ async def delete_adaptive_rule(key: str, rule_type: str = "exact"):
 # ==============================================================================
 # AI VISION ENDPOINTS (Gemini Multimodal Vision LLM)
 # ==============================================================================
-
-class AIVisionConfigRequest(BaseModel):
-    api_key: str
-    model_name: Optional[str] = "gemini-flash-latest"
-    billing_tier: Optional[str] = "free"
-    custom_rpd_limit: Optional[int] = 0
-
-class AIInspectCropRequest(BaseModel):
-    file_id: str
-    page_num: int = 0
-    crop_box: Dict[str, float]
-    raw_ocr_hint: Optional[str] = ""
-    page_rotation: int = 0
-    crop_rotation: int = 0
-
-class AIAutoDetectRequest(BaseModel):
-    file_id: str
-    page_num: int = 0
-    page_rotation: int = 0
 
 @app.get("/api/ai-vision/status")
 async def get_ai_vision_status():
@@ -390,191 +402,33 @@ async def ai_auto_detect(req: AIAutoDetectRequest):
 
 @app.post("/api/export-excel")
 async def export_excel(req: ExportRequest):
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "DungSaiKichThuoc"
-    ws.views.sheetView[0].showGridLines = True
-
-    # Styles
-    title_font = Font(name="Segoe UI", size=15, bold=True, color="1E293B")
-    subtitle_font = Font(name="Segoe UI", size=10, italic=True, color="64748B")
-    header_font = Font(name="Segoe UI", size=11, bold=True, color="FFFFFF")
-    header_fill = PatternFill(start_color="2563EB", end_color="2563EB", fill_type="solid")
-    
-    data_font = Font(name="Segoe UI", size=11, color="0F172A")
-    nominal_font = Font(name="Segoe UI", size=11, bold=True, color="1E3A8A")
-    global_font = Font(name="Segoe UI", size=10, italic=True, color="059669")
-    local_font = Font(name="Segoe UI", size=10, color="2563EB")
-    
-    thin_border = Border(
-        left=Side(style='thin', color="CBD5E1"),
-        right=Side(style='thin', color="CBD5E1"),
-        top=Side(style='thin', color="CBD5E1"),
-        bottom=Side(style='thin', color="CBD5E1")
-    )
-    center_align = Alignment(horizontal="center", vertical="center")
-    left_align = Alignment(horizontal="left", vertical="center")
-    right_align = Alignment(horizontal="right", vertical="center")
-
-    # Title & Metadata
-    ws.merge_cells("A1:I1")
-    ws["A1"] = f"BẢNG BÓC TÁCH KÍCH THƯỚC & DUNG SAI BẢN VẼ: {req.drawing_name}"
-    ws["A1"].font = title_font
-    ws["A1"].alignment = left_align
-    ws.row_dimensions[1].height = 28
-
-    ws.merge_cells("A2:I2")
-    ws["A2"] = f"Quy tắc dung sai chung (Global Constraints): {req.global_constraints_summary or 'Theo số chữ số thập phân'}"
-    ws["A2"].font = subtitle_font
-    ws["A2"].alignment = left_align
-    ws.row_dimensions[2].height = 20
-
-    # Headers
-    headers = [
-        ("STT", 8, center_align),
-        ("Số Lượng", 12, center_align),
-        ("Ký Hiệu", 12, center_align),
-        ("Nominal (Danh nghĩa)", 22, right_align),
-        ("Dung Sai Trên (+)", 18, center_align),
-        ("Dung Sai Dưới (-)", 18, center_align),
-        ("Loại Dung Sai", 16, center_align),
-        ("Kích Thước Đầy Đủ (Callout)", 32, left_align),
-        ("Tọa Độ Crop (X, Y, W, H)", 26, center_align),
-    ]
-
-    header_row = 4
-    ws.row_dimensions[header_row].height = 26
-    for col_idx, (col_name, col_width, alignment) in enumerate(headers, 1):
-        cell = ws.cell(row=header_row, column=col_idx, value=col_name)
-        cell.font = header_font
-        cell.fill = header_fill
-        cell.alignment = alignment
-        cell.border = thin_border
-        col_letter = get_column_letter(col_idx)
-        ws.column_dimensions[col_letter].width = col_width
-
-    # Rows Data
-    row_start = 5
-    for i, r in enumerate(req.rows):
-        row_num = row_start + i
-        ws.row_dimensions[row_num].height = 22
-        
-        # STT
-        c1 = ws.cell(row=row_num, column=1, value=i + 1)
-        c1.alignment = center_align
-        c1.font = data_font
-        c1.border = thin_border
-
-        # Qty
-        c2 = ws.cell(row=row_num, column=2, value=r.get("qty", ""))
-        c2.alignment = center_align
-        c2.font = data_font
-        c2.border = thin_border
-
-        # Prefix
-        c3 = ws.cell(row=row_num, column=3, value=r.get("prefix", ""))
-        c3.alignment = center_align
-        c3.font = data_font
-        c3.border = thin_border
-
-        # Nominal
-        nom = r.get("nominal")
-        nom_str = r.get("nominal_str", "")
-        # Neu la goc do (DMS), giu nguyen chuoi do phut giay day du (vi du: 0°10'36", 4°30'23")
-        if r.get("tol_type") in ["angle", "angle_tol"] or any(c in str(nom_str) for c in ['°', "'", '"']):
-            c4 = ws.cell(row=row_num, column=4, value=nom_str)
-        else:
-            c4 = ws.cell(row=row_num, column=4, value=nom if nom is not None else nom_str)
-        c4.alignment = right_align
-        c4.font = nominal_font
-        c4.border = thin_border
-
-        # Upper Tol
-        c5 = ws.cell(row=row_num, column=5, value=r.get("upper_tol", ""))
-        c5.alignment = center_align
-        c5.font = data_font
-        c5.border = thin_border
-
-        # Lower Tol
-        c6 = ws.cell(row=row_num, column=6, value=r.get("lower_tol", ""))
-        c6.alignment = center_align
-        c6.font = data_font
-        c6.border = thin_border
-
-        # Tol Type
-        ttype = r.get("tol_type", "local")
-        c7 = ws.cell(row=row_num, column=7, value=ttype.capitalize())
-        c7.alignment = center_align
-        c7.font = global_font if "global" in ttype else local_font
-        c7.border = thin_border
-
-        # Full Callout
-        c8 = ws.cell(row=row_num, column=8, value=r.get("full_callout", ""))
-        c8.alignment = left_align
-        c8.font = data_font
-        c8.border = thin_border
-
-        # Tọa độ Crop (X, Y, W, H)
-        b = r.get("box") or r.get("raw_box") or {}
-        p_num = r.get("page", 0)
-        if b and b.get("w", 0) > 0:
-            coord_val = f"P{p_num + 1}: X={int(b.get('x',0))}, Y={int(b.get('y',0))}, W={int(b.get('w',0))}, H={int(b.get('h',0))}"
-        else:
-            coord_val = "-"
-        c9 = ws.cell(row=row_num, column=9, value=coord_val)
-        c9.alignment = center_align
-        c9.font = data_font
-        c9.border = thin_border
-
-    stream = io.BytesIO()
-    wb.save(stream)
-    stream.seek(0)
-
-    filename = f"{req.drawing_name}_Tolerances.xlsx"
-    return StreamingResponse(
-        stream,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename={filename}"}
-    )
+    try:
+        stream = ExportService.generate_excel(
+            drawing_name=req.drawing_name or "BanVeKyThuat",
+            global_constraints_summary=req.global_constraints_summary,
+            rows=req.rows
+        )
+        filename = f"{req.drawing_name or 'BanVeKyThuat'}_Tolerances.xlsx"
+        return StreamingResponse(
+            stream,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Loi tao file Excel: {str(e)}")
 
 @app.post("/api/export-csv")
 async def export_csv(req: ExportRequest):
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow(["STT", "So Luong", "Ky Hieu", "Nominal", "Dung Sai Tren (+)", "Dung Sai Duoi (-)", "Loai Dung Sai", "Full Callout", "Toa Do Crop (X,Y,W,H)"])
-    for i, r in enumerate(req.rows):
-        nom_val = r.get("nominal_str") if (r.get("tol_type") in ["angle", "angle_tol"] or any(c in str(r.get("nominal_str", "")) for c in ['°', "'", '"'])) else r.get("nominal", "")
-        b = r.get("box") or r.get("raw_box") or {}
-        p_num = r.get("page", 0)
-        coord_val = f"P{p_num + 1}: X={int(b.get('x',0))} Y={int(b.get('y',0))} W={int(b.get('w',0))} H={int(b.get('h',0))}" if b and b.get("w", 0) > 0 else ""
-        writer.writerow([
-            i + 1,
-            r.get("qty", ""),
-            r.get("prefix", ""),
-            nom_val,
-            r.get("upper_tol", ""),
-            r.get("lower_tol", ""),
-            r.get("tol_type", ""),
-            r.get("full_callout", ""),
-            coord_val
-        ])
-    output.seek(0)
-    filename = f"{req.drawing_name}_Tolerances.csv"
-    return StreamingResponse(
-        io.BytesIO(output.getvalue().encode('utf-8-sig')),
-        media_type="text/csv",
-        headers={"Content-Disposition": f"attachment; filename={filename}"}
-    )
-
-class CropCoordsRequest(BaseModel):
-    file_id: str
-    page_num: int = 0
-    x: float
-    y: float
-    w: float
-    h: float
-    crop_rotation: int = 0
-    global_constraints: Optional[Dict[str, Any]] = None
+    try:
+        output = ExportService.generate_csv(rows=req.rows)
+        filename = f"{req.drawing_name or 'BanVeKyThuat'}_Tolerances.csv"
+        return StreamingResponse(
+            io.BytesIO(output.getvalue().encode('utf-8-sig')),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Loi tao file CSV: {str(e)}")
 
 @app.post("/api/crop-by-coords")
 async def crop_by_coords(req: CropCoordsRequest):
@@ -612,4 +466,4 @@ async def crop_by_coords(req: CropCoordsRequest):
 if __name__ == "__main__":
     import uvicorn
     print("Khoi dong AutoScanText Web Server tai http://localhost:8000 ...")
-    uvicorn.run("app:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run("app:app", host="127.0.0.1", port=8000, reload=False)
