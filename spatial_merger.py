@@ -47,6 +47,48 @@ class DimensionSpatialMerger:
         if len(valid_items) == 1:
             return [valid_items[0]['text']]
 
+        # Pre-merge cac dau co lap (+, -, ±, em-dash) voi so dung ngay sau tren cung dong
+        pre_merged = []
+        skip_indices = set()
+        for i, it in enumerate(valid_items):
+            if i in skip_indices:
+                continue
+            if it['text'] in ['-', '+', '±', '—', '–', '−'] or re.match(r'^[+-]$', it['text']):
+                best_j = None
+                best_dy = float('inf')
+                for j, it2 in enumerate(valid_items):
+                    if i != j and j not in skip_indices:
+                        dx = it2['x0'] - it['x1']
+                        dy = abs(it['cy'] - it2['cy'])
+                        line_h = max(it['h'], it2['h'])
+                        if dy < line_h * 0.75 and 0 <= dx <= max(10.0, line_h * 1.5):
+                            if dy < best_dy:
+                                best_dy = dy
+                                best_j = j
+                if best_j is not None:
+                    it2 = valid_items[best_j]
+                    sign_char = '-' if it['text'] in ['-', '—', '–', '−'] else ('+' if it['text'] == '+' else '±')
+                    new_item = {
+                        'text': sign_char + it2['text'].lstrip('+-'),
+                        'x0': it['x0'],
+                        'y0': min(it['y0'], it2['y0']),
+                        'x1': it2['x1'],
+                        'y1': max(it['y1'], it2['y1']),
+                        'score': (it.get('score', 1.0) + it2.get('score', 1.0)) / 2.0
+                    }
+                    new_item['w'] = new_item['x1'] - new_item['x0']
+                    new_item['h'] = new_item['y1'] - new_item['y0']
+                    new_item['cx'] = (new_item['x0'] + new_item['x1']) / 2.0
+                    new_item['cy'] = (new_item['y0'] + new_item['y1']) / 2.0
+                    pre_merged.append(new_item)
+                    skip_indices.add(i)
+                    skip_indices.add(best_j)
+                else:
+                    pre_merged.append(it)
+            else:
+                pre_merged.append(it)
+        valid_items = pre_merged
+
         avg_h = sum(it['h'] for it in valid_items) / len(valid_items)
 
         # 1. Kiem tra xem co phai cau truc Stacked Tolerance khong?

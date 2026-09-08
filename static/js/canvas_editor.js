@@ -95,6 +95,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const sortOrderBtn = document.getElementById('sortOrderBtn');
     const sortOrderIcon = document.getElementById('sortOrderIcon');
     const sortOrderText = document.getElementById('sortOrderText');
+    const renumberBtn = document.getElementById('renumberBtn');
     
     const docName = document.getElementById('docName');
     const pageNavContainer = document.getElementById('pageNavContainer');
@@ -620,6 +621,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Trả về cả IoU và tỷ lệ chồng lấp so với box nhỏ hơn
         return Math.max(interArea / (unionArea || 1), interArea / (minArea || 1));
+    }
+
+    // Cấp phát ID duy nhất tuần tự, an toàn tuyệt đối trước việc xóa hoặc thêm dòng
+    function getNextRowId() {
+        if (!state.rows || state.rows.length === 0) return 1;
+        const maxId = state.rows.reduce((max, r) => Math.max(max, parseInt(r.id, 10) || 0), 0);
+        return maxId + 1;
     }
 
     function getHitHandle(pt, box) {
@@ -1791,7 +1799,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             } else {
                 const newRow = {
-                    id: state.rows.length + 1,
+                    id: getNextRowId(),
                     page: state.currentPage,
                     ...rowData
                 };
@@ -2230,6 +2238,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 showToast('Đã chuyển sang: Kích thước từ đầu bản vẽ (1 ➔ N)', 'info');
             }
             renderTable(true);
+        });
+    }
+
+    // Đánh số lại toàn bộ bong bóng và bảng tuần tự (1, 2, 3...)
+    if (renumberBtn) {
+        renumberBtn.addEventListener('click', () => {
+            if (!state.rows || state.rows.length === 0) {
+                showToast('Chưa có kích thước nào để đánh số lại', 'info');
+                return;
+            }
+            pushUndoState();
+            state.rows.forEach((r, idx) => {
+                r.id = idx + 1;
+            });
+            renderTable();
+            render();
+            showToast(`✅ Đã đánh số lại tuần tự tất cả ${state.rows.length} mục (1 ➔ ${state.rows.length})!`, 'success');
         });
     }
 
@@ -2865,7 +2890,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     body: JSON.stringify({
                         file_id: state.fileId,
                         page_num: state.currentPage,
-                        page_rotation: state.pageRotation
+                        page_rotation: state.pageRotation,
+                        global_constraints: state.globalConstraints
                     })
                 });
                 const data = await resp.json();
@@ -2879,12 +2905,59 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
 
-                showToast(`⚡ AI Local đã phát hiện ${dims.length} cụm kích thước! Đang bóc tách chi tiết...`, 'info');
-
                 pushUndoState();
 
                 let addedCount = 0;
                 let completedCount = 0;
+
+                // Nếu là file CAD có Vector Text Layer: Đã có sẵn 100% dữ liệu & thumbnail, nạp tức thì!
+                if (data.source === 'pdf_vector') {
+                    for (const d of dims) {
+                        const newBox = d.box;
+                        const existingRow = state.rows.find(r => 
+                            r.page === state.currentPage && 
+                            r.raw_box && 
+                            calculateBoxOverlap(newBox, r.raw_box) > 0.5
+                        );
+
+                        const rowPayload = {
+                            thumbnail: d.thumbnail || '',
+                            qty: d.qty || '',
+                            prefix: d.prefix || '',
+                            nominal: d.nominal,
+                            nominal_str: d.nominal_str || (d.nominal !== null ? String(d.nominal) : ''),
+                            upper_tol: d.upper_tol || '',
+                            lower_tol: d.lower_tol || '',
+                            tol_type: d.tol_type || 'local',
+                            full_callout: d.full_callout || d.raw_text || d.label,
+                            raw_text: d.raw_text || d.label || '',
+                            raw_box: d.box,
+                            box: d.box,
+                            norm_box: d.crop_box,
+                            crop_rotation: d.crop_rotation || 0,
+                            is_auto_detected: true
+                        };
+
+                        if (existingRow) {
+                            Object.assign(existingRow, rowPayload);
+                        } else {
+                            const newRow = {
+                                id: getNextRowId(),
+                                page: state.currentPage,
+                                ...rowPayload
+                            };
+                            state.rows.push(newRow);
+                            addedCount++;
+                        }
+                    }
+
+                    renderTable(true, state.rows.length - 1);
+                    render();
+                    showToast(`⚡ Local Auto-Scan (Vector CAD): Đã nhận diện thành công ${addedCount} kích thước siêu tốc!`, 'success');
+                    return;
+                }
+
+                showToast(`⚡ AI Local đã phát hiện ${dims.length} cụm kích thước! Đang bóc tách chi tiết...`, 'info');
 
                 const processSingleDim = async (d) => {
                     try {
@@ -2897,47 +2970,12 @@ document.addEventListener('DOMContentLoaded', () => {
                                 crop_box: d.crop_box,
                                 global_constraints: state.globalConstraints,
                                 page_rotation: state.pageRotation,
-                                crop_rotation: 0
+                                crop_rotation: d.crop_rotation || 0
                             })
                         });
                         const cropData = await cropResp.json();
                         if (cropResp.ok && (cropData.nominal_str || cropData.raw_text)) {
-                            const newBox = d.box || cropData.box;
-                            const existingRow = state.rows.find(r => 
-                                r.page === state.currentPage && 
-                                r.raw_box && 
-                                calculateBoxOverlap(newBox, r.raw_box) > 0.5
-                            );
-
-                            const rowPayload = {
-                                thumbnail: cropData.thumbnail,
-                                qty: cropData.qty || '',
-                                prefix: cropData.prefix || '',
-                                nominal: cropData.nominal,
-                                nominal_str: cropData.nominal_str || (cropData.nominal !== null ? String(cropData.nominal) : ''),
-                                upper_tol: cropData.upper_tol || '',
-                                lower_tol: cropData.lower_tol || '',
-                                tol_type: cropData.tol_type || 'local',
-                                full_callout: cropData.full_callout || cropData.raw_text || d.label,
-                                raw_text: cropData.raw_text || d.label || '',
-                                raw_box: d.box,
-                                box: cropData.box || d.box,
-                                norm_box: d.crop_box,
-                                crop_rotation: 0,
-                                is_auto_detected: true
-                            };
-
-                            if (existingRow) {
-                                Object.assign(existingRow, rowPayload);
-                            } else {
-                                const newRow = {
-                                    id: state.rows.length + 1,
-                                    page: state.currentPage,
-                                    ...rowPayload
-                                };
-                                state.rows.push(newRow);
-                                addedCount++;
-                            }
+                            return { cropData, d };
                         }
                     } catch (e) {
                         console.error('Lỗi bóc tách ô crop local:', e);
@@ -2945,12 +2983,55 @@ document.addEventListener('DOMContentLoaded', () => {
                         completedCount++;
                         loadingText.textContent = `⚡ Đang bóc tách chi tiết: ${completedCount}/${dims.length} kích thước...`;
                     }
+                    return null;
                 };
 
                 const CONCURRENCY_LIMIT = 6;
                 for (let i = 0; i < dims.length; i += CONCURRENCY_LIMIT) {
                     const batch = dims.slice(i, i + CONCURRENCY_LIMIT);
-                    await Promise.all(batch.map(d => processSingleDim(d)));
+                    const batchResults = await Promise.all(batch.map(d => processSingleDim(d)));
+
+                    for (const item of batchResults) {
+                        if (!item) continue;
+                        const { cropData, d } = item;
+                        const newBox = d.box || cropData.box;
+                        const existingRow = state.rows.find(r => 
+                            r.page === state.currentPage && 
+                            r.raw_box && 
+                            calculateBoxOverlap(newBox, r.raw_box) > 0.5
+                        );
+
+                        const rowPayload = {
+                            thumbnail: cropData.thumbnail,
+                            qty: cropData.qty || '',
+                            prefix: cropData.prefix || '',
+                            nominal: cropData.nominal,
+                            nominal_str: cropData.nominal_str || (cropData.nominal !== null ? String(cropData.nominal) : ''),
+                            upper_tol: cropData.upper_tol || '',
+                            lower_tol: cropData.lower_tol || '',
+                            tol_type: cropData.tol_type || 'local',
+                            full_callout: cropData.full_callout || cropData.raw_text || d.label,
+                            raw_text: cropData.raw_text || d.label || '',
+                            raw_box: d.box,
+                            box: cropData.box || d.box,
+                            norm_box: d.crop_box,
+                            crop_rotation: d.crop_rotation || 0,
+                            is_auto_detected: true
+                        };
+
+                        if (existingRow) {
+                            Object.assign(existingRow, rowPayload);
+                        } else {
+                            const newRow = {
+                                id: getNextRowId(),
+                                page: state.currentPage,
+                                ...rowPayload
+                            };
+                            state.rows.push(newRow);
+                            addedCount++;
+                        }
+                    }
+
                     renderTable(true, state.rows.length - 1);
                     render();
                 }
@@ -3018,48 +3099,12 @@ document.addEventListener('DOMContentLoaded', () => {
                                 crop_box: d.crop_box,
                                 global_constraints: state.globalConstraints,
                                 page_rotation: state.pageRotation,
-                                crop_rotation: 0
+                                crop_rotation: d.crop_rotation || 0
                             })
                         });
                         const cropData = await cropResp.json();
                         if (cropResp.ok && (cropData.nominal_str || cropData.raw_text)) {
-                            const newBox = d.box || cropData.box;
-                            // Kiểm tra xem có bị trùng/chồng đè với box đã tồn tại trên trang không
-                            const existingRow = state.rows.find(r => 
-                                r.page === state.currentPage && 
-                                r.raw_box && 
-                                calculateBoxOverlap(newBox, r.raw_box) > 0.5
-                            );
-
-                            const rowPayload = {
-                                thumbnail: cropData.thumbnail,
-                                qty: cropData.qty || '',
-                                prefix: cropData.prefix || '',
-                                nominal: cropData.nominal,
-                                nominal_str: cropData.nominal_str || (cropData.nominal !== null ? String(cropData.nominal) : ''),
-                                upper_tol: cropData.upper_tol || '',
-                                lower_tol: cropData.lower_tol || '',
-                                tol_type: cropData.tol_type || 'local',
-                                full_callout: cropData.full_callout || cropData.raw_text || d.label,
-                                raw_text: cropData.raw_text || d.label || '',
-                                raw_box: d.box,
-                                box: cropData.box || d.box,
-                                norm_box: d.crop_box,
-                                crop_rotation: 0,
-                                is_auto_detected: true
-                            };
-
-                            if (existingRow) {
-                                Object.assign(existingRow, rowPayload);
-                            } else {
-                                const newRow = {
-                                    id: state.rows.length + 1,
-                                    page: state.currentPage,
-                                    ...rowPayload
-                                };
-                                state.rows.push(newRow);
-                                addedCount++;
-                            }
+                            return { cropData, d };
                         }
                     } catch (e) {
                         console.error('Lỗi bóc tách ô crop:', e);
@@ -3067,13 +3112,56 @@ document.addEventListener('DOMContentLoaded', () => {
                         completedCount++;
                         loadingText.textContent = `🤖 Đang bóc tách chi tiết: ${completedCount}/${dims.length} kích thước...`;
                     }
+                    return null;
                 };
 
                 // Chạy đồng thời theo lô 6 request song song để tăng tốc độ gấp 5-6 lần
                 const CONCURRENCY_LIMIT = 6;
                 for (let i = 0; i < dims.length; i += CONCURRENCY_LIMIT) {
                     const batch = dims.slice(i, i + CONCURRENCY_LIMIT);
-                    await Promise.all(batch.map(d => processSingleDim(d)));
+                    const batchResults = await Promise.all(batch.map(d => processSingleDim(d)));
+
+                    for (const item of batchResults) {
+                        if (!item) continue;
+                        const { cropData, d } = item;
+                        const newBox = d.box || cropData.box;
+                        const existingRow = state.rows.find(r => 
+                            r.page === state.currentPage && 
+                            r.raw_box && 
+                            calculateBoxOverlap(newBox, r.raw_box) > 0.5
+                        );
+
+                        const rowPayload = {
+                            thumbnail: cropData.thumbnail,
+                            qty: cropData.qty || '',
+                            prefix: cropData.prefix || '',
+                            nominal: cropData.nominal,
+                            nominal_str: cropData.nominal_str || (cropData.nominal !== null ? String(cropData.nominal) : ''),
+                            upper_tol: cropData.upper_tol || '',
+                            lower_tol: cropData.lower_tol || '',
+                            tol_type: cropData.tol_type || 'local',
+                            full_callout: cropData.full_callout || cropData.raw_text || d.label,
+                            raw_text: cropData.raw_text || d.label || '',
+                            raw_box: d.box,
+                            box: cropData.box || d.box,
+                            norm_box: d.crop_box,
+                            crop_rotation: d.crop_rotation || 0,
+                            is_auto_detected: true
+                        };
+
+                        if (existingRow) {
+                            Object.assign(existingRow, rowPayload);
+                        } else {
+                            const newRow = {
+                                id: getNextRowId(),
+                                page: state.currentPage,
+                                ...rowPayload
+                            };
+                            state.rows.push(newRow);
+                            addedCount++;
+                        }
+                    }
+
                     // Cập nhật canvas và bảng định kỳ theo từng batch để người dùng nhìn thấy bong bóng xuất hiện dần
                     renderTable(true, state.rows.length - 1);
                     render();
@@ -3093,9 +3181,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Init AI status on startup
     checkAiVisionStatus();
-
-    // Init OCR Device status (GPU DirectML / CPU)
-    checkOcrDeviceStatus();
 
     // Init adaptive count on startup
     updateAdaptiveCount();

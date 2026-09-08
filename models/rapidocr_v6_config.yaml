@@ -24,7 +24,7 @@ Det:
   - 0.5
   - 0.5
   - 0.5
-  model_path: d:/LocalScanDrawing/models/PP-OCRv6_small_det.onnx
+  model_path: C:/Users/IRS03-415/Desktop/AutoScanText/models/PP-OCRv6_small_det.onnx
   score_mode: fast
   std:
   - 0.5
@@ -51,12 +51,12 @@ Global:
 Rec:
   inter_op_num_threads: -1
   intra_op_num_threads: -1
-  model_path: d:/LocalScanDrawing/models/PP-OCRv6_small_rec.onnx
+  model_path: C:/Users/IRS03-415/Desktop/AutoScanText/models/PP-OCRv6_small_rec.onnx
   rec_batch_num: 6
   rec_img_shape:
   - 3
   - 48
   - 320
-  rec_keys_path: d:/LocalScanDrawing/models/ppocrv6_dict.txt
+  rec_keys_path: C:/Users/IRS03-415/Desktop/AutoScanText/models/ppocrv6_dict.txt
   use_cuda: false
   use_dml: false

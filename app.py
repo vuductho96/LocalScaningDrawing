@@ -137,6 +137,8 @@ class AIAutoDetectRequest(BaseModel):
     file_id: str
     page_num: int = 0
     page_rotation: int = 0
+    global_constraints: Optional[Dict[str, Any]] = None
+    force_ocr: Optional[bool] = False
 
 class OCRDeviceRequest(BaseModel):
     device: str
@@ -424,7 +426,7 @@ async def ai_auto_detect(req: AIAutoDetectRequest):
 @app.post("/api/local-auto-scan")
 async def local_auto_scan(req: AIAutoDetectRequest):
     """
-    Auto-Scan toan bo trang ban ve che do Local (dung mo hinh PP-OCRv6 Offline, khong can API Key).
+    Auto-Scan toan bo trang ban ve che do Local (Hybrid Vector-First + PP-OCRv6 Offline).
     """
     file_info = get_or_restore_file(req.file_id)
     if not file_info:
@@ -436,7 +438,9 @@ async def local_auto_scan(req: AIAutoDetectRequest):
             pdf_path=pdf_path,
             page_num=req.page_num,
             page_rotation=req.page_rotation,
-            dpi=200
+            dpi=200,
+            global_constraints=req.global_constraints,
+            force_ocr=bool(req.force_ocr)
         )
         return res
     except Exception as e:

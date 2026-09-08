@@ -545,6 +545,19 @@
       "suffix": "",
       "full_callout": "41.42 0/-0.01",
       "user_verified": true
+    },
+    "0.400 \n-\n0.000\n0.001": {
+      "raw_text": "0.400 \n-\n0.000\n0.001",
+      "qty": "",
+      "prefix": "",
+      "nominal": 0.4,
+      "nominal_str": "0.400",
+      "upper_tol": "+0.001",
+      "lower_tol": "0",
+      "tol_type": "user_defined",
+      "suffix": "",
+      "full_callout": "0.400 +0.001/0",
+      "user_verified": true
     }
   },
   "generalized_rules": [

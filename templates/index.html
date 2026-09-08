@@ -124,23 +124,16 @@
 
                 <span class="w-px h-4 bg-slate-700/80 mx-1"></span>
 
-                <!-- Nút Beta Local AI Auto-Scan (Chạy Offline trên máy) -->
-                <button id="localAutoScanBtn" class="px-2.5 py-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-lg font-medium text-xs flex items-center gap-1.5 shadow-md shadow-emerald-600/30 transition" title="Tự động quét toàn bộ trang bản vẽ bằng AI Local (PP-OCRv6 Offline, không cần API Key, chạy trực tiếp trên máy)">
+                <!-- Nút Local Auto-Scan (PP-OCRv6 Offline Miễn Phí) -->
+                <button id="localAutoScanBtn" class="px-2.5 py-1 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white rounded-lg font-medium text-xs flex items-center gap-1.5 shadow-md shadow-cyan-600/30 transition" title="Dùng Local OCR (PP-OCRv6 Offline) tự động quét và bóc tách toàn bộ kích thước trên trang bản vẽ (Miễn phí, không cần API Key)">
                     <i class="fa-solid fa-bolt text-yellow-300 text-xs"></i>
                     <span class="hidden sm:inline">Local Auto-Scan</span>
-                    <span class="px-1 py-0.5 text-[9px] font-extrabold bg-amber-400 text-slate-900 rounded font-mono leading-none">BETA</span>
                 </button>
 
-                <!-- Nút Chuyển Đổi Thiết Bị OCR (GPU DirectML / CPU) -->
-                <button id="ocrDeviceToggleBtn" class="px-2 py-1 bg-slate-800/90 hover:bg-slate-750 text-slate-200 border border-slate-700/80 hover:border-emerald-500/50 rounded-lg text-xs font-mono font-medium flex items-center gap-1.5 transition shadow-sm select-none" title="Chuyển đổi thiết bị xử lý: GPU DirectML / CPU">
-                    <i id="ocrDeviceIcon" class="fa-solid fa-microchip text-emerald-400 text-xs"></i>
-                    <span id="ocrDeviceLabel" class="text-[11px] font-bold text-emerald-400">GPU</span>
-                </button>
-
-                <!-- Nút AI Auto-Scan (Cloud Gemini) -->
-                <button id="aiAutoScanBtn" class="px-2.5 py-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-lg font-medium text-xs flex items-center gap-1.5 shadow-md shadow-purple-600/30 transition" title="Dùng AI Vision (Gemini Cloud) quét toàn bộ trang bản vẽ để tự động phát hiện tất cả kích thước">
+                <!-- Nút AI Auto-Scan Nổi Bật -->
+                <button id="aiAutoScanBtn" class="px-2.5 py-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-lg font-medium text-xs flex items-center gap-1.5 shadow-md shadow-purple-600/30 transition" title="Dùng AI Vision quét toàn bộ trang bản vẽ để tự động phát hiện tất cả kích thước (Sử dụng Gemini API Key)">
                     <i class="fa-solid fa-wand-magic-sparkles text-amber-300 text-xs"></i>
-                    <span class="hidden sm:inline">AI Vision</span>
+                    <span class="hidden sm:inline">AI Auto-Scan</span>
                 </button>
             </div>
 
@@ -207,11 +200,14 @@
                     <input type="text" id="tableSearchInput" placeholder="Lọc kích thước..." class="w-full bg-slate-950/80 border border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/40 font-mono transition">
                 </div>
 
-                <!-- Action Buttons: Sort, Scroll, Clear -->
+                <!-- Action Buttons: Sort, Renumber, Scroll, Clear -->
                 <div class="flex items-center space-x-1.5 shrink-0">
                     <button id="sortOrderBtn" class="text-slate-300 hover:text-cyan-300 text-xs font-medium px-2 py-1.5 rounded-lg transition bg-slate-800 hover:bg-slate-750 border border-slate-700 flex items-center gap-1.5 shadow-sm" title="Đảo chiều sắp xếp (Mới nhất ở trên / Cũ nhất ở trên)">
                         <i id="sortOrderIcon" class="fa-solid fa-arrow-down-9-1 text-cyan-400 text-xs"></i>
                         <span id="sortOrderText" class="text-[11px] font-mono hidden sm:inline">Mới nhất</span>
+                    </button>
+                    <button id="renumberBtn" class="text-slate-400 hover:text-cyan-300 text-xs p-1.5 rounded-lg transition bg-slate-800/60 hover:bg-slate-750 border border-slate-700/80" title="Đánh số lại thứ tự bong bóng từ 1 đến hết (1..N)">
+                        <i class="fa-solid fa-list-ol text-xs"></i>
                     </button>
                     <button id="scrollToTopBtn" class="text-slate-400 hover:text-cyan-300 text-xs p-1.5 rounded-lg transition bg-slate-800/60 hover:bg-slate-750 border border-slate-700/80" title="Cuộn lên đầu bảng">
                         <i class="fa-solid fa-arrow-up text-xs"></i>
@@ -321,31 +317,6 @@
                 
                 <!-- TAB 1: AI VISION & QUOTA -->
                 <div id="tab-ai-vision" class="tab-pane space-y-4">
-                    <!-- PHẦN CỨNG LOCAL OCR ENGINE (GPU DirectML / CPU) -->
-                    <div class="p-3 bg-slate-950 rounded-xl border border-emerald-500/30 space-y-2.5">
-                        <div class="flex items-center justify-between">
-                            <span class="font-semibold text-slate-200 flex items-center gap-1.5 text-xs">
-                                <i class="fa-solid fa-microchip text-emerald-400"></i>
-                                <span>Phần Cứng Local OCR (PP-OCRv6 Offline)</span>
-                            </span>
-                            <span id="ocrSettingsDmlBadge" class="bg-emerald-900/60 text-emerald-300 border border-emerald-600/60 text-[10px] font-mono px-1.5 py-0.5 rounded">DirectML Ready</span>
-                        </div>
-                        <div class="grid grid-cols-2 gap-3 pt-1">
-                            <div>
-                                <label class="text-slate-400 text-[11px] block mb-1">Thiết bị xử lý:</label>
-                                <select id="ocrDeviceSelect" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-slate-200 font-medium text-xs focus:border-emerald-500 focus:outline-none font-mono">
-                                    <option value="gpu">GPU (DirectML Acceleration)</option>
-                                    <option value="cpu">CPU (Multi-threaded x86)</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="text-slate-400 text-[11px] block mb-1">Card đồ họa phát hiện:</label>
-                                <div id="ocrGpuNameDisplay" class="bg-slate-900 border border-slate-700/80 rounded-lg px-2.5 py-1.5 text-[11px] font-mono text-cyan-300 truncate" title="Đang kiểm tra...">
-                                    Đang nhận diện...
-                                </div>
-                            </div>
-                        </div>
-                    </div>
 
                     <!-- API Key -->
                     <div class="space-y-1.5">
